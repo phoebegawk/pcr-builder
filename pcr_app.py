@@ -263,8 +263,8 @@ async def home():
         </div>
 
         <div class="page-subtext">
-            <div class="page-subtext-primary">Build your PCR cover page from one client name and one PCR Numbers file.</div>
-            <div class="page-subtext-secondary">Month + year will be pulled automatically from the date under the ENDED heading in Excel.</div>
+            <div class="page-subtext-primary">Complete the fields below to build your PCR!</div>
+            <div class="page-subtext-secondary">Ready to send to the client once downloaded.</div>
         </div>
 
         <form id="pcrForm" class="spec-section">
@@ -279,7 +279,7 @@ async def home():
                         autocomplete="off"
                         required
                     />
-                    <div class="field-note">Type the client name exactly as you want it to appear on the PPTX cover.</div>
+                    <div class="field-note">Enter the Client Name above.</div>
                 </div>
 
                 <div class="drop-area" id="dropArea">
