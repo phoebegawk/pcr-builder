@@ -1,1 +1,278 @@
-Styles
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
+
+/* -----------------------------------
+   GLOBAL FONT
+----------------------------------- */
+* {
+    font-family: "Montserrat", sans-serif;
+    box-sizing: border-box;
+}
+
+/* -----------------------------------
+   GLOBAL PAGE
+----------------------------------- */
+html, body {
+    background-color: #542D54;
+    background-image: url("/assets/PCRBuilder-BG.png");
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center center;
+    background-attachment: fixed;
+    color: #FFFFFF;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    display: block;
+    padding: 40px;
+}
+
+/* -----------------------------------
+   HEADER
+----------------------------------- */
+.header-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 5px;
+}
+
+.header-image {
+    width: 100%;
+    max-width: 1100px;
+    margin-bottom: 30px;
+}
+
+/* -----------------------------------
+   PAGE SUBTEXT
+----------------------------------- */
+.page-subtext {
+    width: 100%;
+    max-width: 1200px;
+    margin: -18px auto 24px auto;
+    text-align: center;
+    color: #FFFFFF;
+}
+
+.page-subtext-primary {
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+
+.page-subtext-secondary {
+    font-weight: 600;
+    font-size: 14px;
+    opacity: 0.95;
+}
+
+/* -----------------------------------
+   MAIN WHITE SECTION
+----------------------------------- */
+.spec-section {
+    width: 100%;
+    max-width: 1200px;
+    background: #FFFFFF;
+    border-radius: 12px;
+    border: 3px solid #D7DF23;
+    padding: 20px 32px;
+    margin: 0 auto 24px auto;
+    position: relative;
+}
+
+.section-inner {
+    width: 100%;
+    max-width: 1136px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+}
+
+/* -----------------------------------
+   INPUTS
+----------------------------------- */
+.client-name-input,
+.dropdown {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 2px solid #D7DF23;
+    background: #FFFFFF;
+    color: #542D54;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.client-name-input::placeholder {
+    color: #6b4a6f;
+    opacity: 1;
+}
+
+.client-name-input:focus,
+.dropdown:focus {
+    outline: none;
+}
+
+.field-note {
+    width: 100%;
+    margin-top: 6px;
+    color: #542D54;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+/* -----------------------------------
+   DROP AREA
+----------------------------------- */
+.drop-area {
+    width: 100%;
+    border: 3px dashed #542D54;
+    border-radius: 12px;
+    background: #F7F7F7;
+    padding: 24px 12px;
+    color: #542D54;
+    font-size: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.drop-area.drag-over {
+    background: #ECECEC;
+    border-color: #D7DF23;
+}
+
+.file-input {
+    display: none;
+}
+
+/* -----------------------------------
+   UPLOAD CONFIRMATION
+----------------------------------- */
+.upload-confirm {
+    width: 100%;
+    color: #542D54;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.upload-confirm.hidden,
+.hidden {
+    display: none;
+}
+
+.upload-confirm-text {
+    margin-top: 10px;
+}
+
+/* -----------------------------------
+   BUTTONS
+----------------------------------- */
+.gawk-button {
+    background: #D7DF23;
+    color: #542D54;
+    padding: 14px 32px;
+    border-radius: 999px;
+    border: none;
+    font-weight: 700;
+    font-size: 16px;
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+.gawk-button:hover {
+    background: #C8D51E;
+}
+
+.gawk-button.disabled,
+.gawk-button:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.secondary-button {
+    background: #C99CCA;
+    color: #542D54;
+}
+
+.secondary-button:hover {
+    background: #B88BBE;
+}
+
+.browse-btn {
+    background: #D7DF23;
+    color: #542D54;
+}
+
+.build-button {
+    background: linear-gradient(90deg, #D9B3DB 0%, #8B7F40 100%);
+    color: #542D54;
+    min-width: 170px;
+}
+
+.build-button:hover {
+    opacity: 0.95;
+}
+
+.reset-button {
+    background: #FFFFFF;
+    color: #542D54;
+    border: 2px solid #D7DF23;
+    margin: 18px auto 40px auto;
+    display: block;
+    min-width: 140px;
+}
+
+.reset-button:hover {
+    background: #F2F2F2;
+}
+
+/* -----------------------------------
+   ACTION ROW
+----------------------------------- */
+.actions-row {
+    width: 100%;
+    max-width: 1200px;
+    margin: 18px auto 28px auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+/* -----------------------------------
+   STATUS
+----------------------------------- */
+.status-message {
+    width: 100%;
+    text-align: center;
+    color: #542D54;
+    font-weight: 700;
+    font-size: 14px;
+    min-height: 20px;
+}
+
+/* -----------------------------------
+   MOBILE
+----------------------------------- */
+@media (max-width: 768px) {
+    body {
+        padding: 20px;
+    }
+
+    .spec-section {
+        padding: 18px;
+    }
+
+    .header-image {
+        max-width: 100%;
+        margin-bottom: 20px;
+    }
+}
