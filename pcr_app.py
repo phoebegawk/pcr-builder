@@ -32,6 +32,10 @@ def clean_filename_part(value: str) -> str:
     return value or "Client"
 
 
+def normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip())
+
+
 def extract_month_year_from_excel(file_bytes: bytes) -> str:
     workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
 
@@ -85,23 +89,38 @@ def _parse_date_string(value: str):
 
 
 def replace_text_on_slide(slide, replacements: dict):
+    normalized_replacements = {
+        normalize_text(key): value for key, value in replacements.items()
+    }
+
     for shape in slide.shapes:
         if not hasattr(shape, "text_frame") or not shape.has_text_frame:
             continue
 
-        current_text = shape.text.strip()
-        if current_text not in replacements:
+        current_text = normalize_text(shape.text)
+        if current_text not in normalized_replacements:
             continue
 
-        new_text = replacements[current_text]
+        new_text = normalized_replacements[current_text]
 
-        for paragraph in shape.text_frame.paragraphs:
-            if paragraph.runs:
-                paragraph.runs[0].text = new_text
-                for run in paragraph.runs[1:]:
-                    run.text = ""
-            else:
-                paragraph.text = new_text
+        text_frame = shape.text_frame
+        if not text_frame.paragraphs:
+            text_frame.text = new_text
+            continue
+
+        first_paragraph = text_frame.paragraphs[0]
+        if first_paragraph.runs:
+            first_paragraph.runs[0].text = new_text
+            for run in first_paragraph.runs[1:]:
+                run.text = ""
+        else:
+            first_paragraph.text = new_text
+
+        for paragraph in text_frame.paragraphs[1:]:
+            for run in paragraph.runs:
+                run.text = ""
+            if not paragraph.runs:
+                paragraph.text = ""
 
 
 def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str) -> BytesIO:
@@ -126,13 +145,17 @@ def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str) -> BytesIO
         },
     )
 
+    rep_contact_line = f'{rep["phone"]} | {rep["email"]}'
+
     last_slide = prs.slides[-1]
     replace_text_on_slide(
         last_slide,
         {
             "Rep Name!": rep["display_name"],
-            "Rep Email": rep["email"],
-            "Rep Number": rep["phone"],
+            "Rep Number | Rep Email": rep_contact_line,
+            "Rep Number   |   Rep Email": rep_contact_line,
+            '"Rep Number" | Rep Email': rep_contact_line,
+            '"Rep Number"   |   Rep Email': rep_contact_line,
         },
     )
 
@@ -177,6 +200,15 @@ async def home():
                 font-weight: 600;
                 opacity: 0.9;
                 margin-top: 6px;
+            }}
+
+            .section-label {{
+                width: 100%;
+                color: #542D54;
+                font-size: 24px;
+                font-weight: 700;
+                margin: 0 0 10px 0;
+                line-height: 1.1;
             }}
 
             .gawk-button {{
@@ -275,6 +307,10 @@ async def home():
                 .spec-section {{
                     padding: 18px;
                 }}
+
+                .section-label {{
+                    font-size: 20px;
+                }}
             }}
         </style>
     </head>
@@ -292,6 +328,7 @@ async def home():
         <form id="pcrForm" class="spec-section">
             <div class="section-inner">
                 <div style="width:100%;">
+                    <div class="section-label">Client Name</div>
                     <input
                         type="text"
                         id="clientName"
@@ -305,6 +342,7 @@ async def home():
                 </div>
 
                 <div style="width:100%;">
+                    <div class="section-label">Sales Representative</div>
                     <select id="salesRep" name="sales_rep" class="dropdown" required>
                         <option value="" selected disabled>Select Sales Rep</option>
                         {options_html}
@@ -312,16 +350,19 @@ async def home():
                     <div class="field-note">Choose the rep whose contact details should appear on the last page.</div>
                 </div>
 
-                <div class="drop-area" id="dropArea">
-                    <p>Drag & drop PCR Numbers Excel here!</p>
-                    <button type="button" class="gawk-button browse-btn" id="browseBtn">Browse File</button>
-                    <input
-                        type="file"
-                        id="excelFile"
-                        class="file-input"
-                        accept=".xlsx,.xlsm,.xltx,.xltm"
-                        required
-                    />
+                <div style="width:100%;">
+                    <div class="section-label">PCR Numbers File</div>
+                    <div class="drop-area" id="dropArea">
+                        <p>Drag & drop PCR Numbers Excel here!</p>
+                        <button type="button" class="gawk-button browse-btn" id="browseBtn">Browse File</button>
+                        <input
+                            type="file"
+                            id="excelFile"
+                            class="file-input"
+                            accept=".xlsx,.xlsm,.xltx,.xltm"
+                            required
+                        />
+                    </div>
                 </div>
 
                 <div class="upload-confirm hidden" id="uploadConfirm">
