@@ -727,4 +727,18 @@ async def build_pcr(
 
     safe_client = clean_filename_part(client_name).replace(" ", "_")
     safe_month = month_year.replace(" ", "_")
-    output_filename = f"PCR_Report_{
+    output_filename = f"PCR_Report_{safe_client}_{safe_month}.pptx"
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{output_filename}"'
+    }
+
+    return StreamingResponse(
+        pptx_stream,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers=headers,
+    )
+
+
+if __name__ == "__main__":
+    uvicorn.run("pcr_app:app", host="0.0.0.0", port=8000, reload=True)
