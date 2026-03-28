@@ -2,6 +2,7 @@ from io import BytesIO
 from pathlib import Path
 from datetime import datetime
 import re
+import copy
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -33,7 +34,60 @@ def clean_filename_part(value: str) -> str:
 
 
 def normalize_text(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip())
+    return re.sub(r"\s+", " ", str(value).strip())
+
+
+def format_month_year(value) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%B %Y")
+
+    if hasattr(value, "strftime"):
+        return value.strftime("%B %Y")
+
+    if isinstance(value, str) and value.strip():
+        parsed = _parse_date_string(value.strip())
+        if parsed:
+            return parsed.strftime("%B %Y")
+
+    raise ValueError("Couldn't format Month Year from the Excel ENDED date.")
+
+
+def format_day_month_year(value) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%-d %b, %Y")
+
+    if hasattr(value, "strftime"):
+        return value.strftime("%-d %b, %Y")
+
+    if isinstance(value, str) and value.strip():
+        parsed = _parse_date_string(value.strip())
+        if parsed:
+            return parsed.strftime("%-d %b, %Y")
+
+    raise ValueError(f"Couldn't format date value: {value}")
+
+
+def format_impressions(value) -> str:
+    if value is None or str(value).strip() == "":
+        return ""
+
+    if isinstance(value, (int, float)):
+        return f"{int(round(value)):,}"
+
+    raw = str(value).strip().replace(",", "")
+    try:
+        return f"{int(float(raw)):,}"
+    except ValueError:
+        return str(value).strip()
+
+
+def get_site_top_line(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    return text.splitlines()[0].strip()
 
 
 def extract_month_year_from_excel(file_bytes: bytes) -> str:
@@ -54,22 +108,81 @@ def extract_month_year_from_excel(file_bytes: bytes) -> str:
             continue
 
         date_cell = sheet.cell(row=ended_cell.row + 1, column=ended_cell.column)
-        date_value = date_cell.value
-
-        if isinstance(date_value, datetime):
-            return date_value.strftime("%B %Y")
-
-        if hasattr(date_value, "strftime"):
-            return date_value.strftime("%B %Y")
-
-        if isinstance(date_value, str) and date_value.strip():
-            parsed = _parse_date_string(date_value.strip())
-            if parsed:
-                return parsed.strftime("%B %Y")
-
-        raise ValueError("I found the 'ENDED' header, but the cell below it wasn't a valid date.")
+        return format_month_year(date_cell.value)
 
     raise ValueError("Couldn't find an 'ENDED' header in the uploaded Excel file.")
+
+
+def extract_board_rows(file_bytes: bytes):
+    workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
+
+    required_headers = {
+        "SITE": None,
+        "STARTED": None,
+        "ENDED": None,
+        "DAYS": None,
+        "IMPRESSIONS": None,
+    }
+
+    for sheet in workbook.worksheets:
+        header_row_idx = None
+        header_map = {}
+
+        for row in sheet.iter_rows():
+            current_map = {}
+            for cell in row:
+                if isinstance(cell.value, str):
+                    header_text = cell.value.strip().upper()
+                    if header_text in required_headers:
+                        current_map[header_text] = cell.column
+
+            if all(key in current_map for key in required_headers):
+                header_row_idx = row[0].row
+                header_map = current_map
+                break
+
+        if not header_row_idx:
+            continue
+
+        rows = []
+        current_row = header_row_idx + 1
+
+        while current_row <= sheet.max_row:
+            site_value = sheet.cell(current_row, header_map["SITE"]).value
+            started_value = sheet.cell(current_row, header_map["STARTED"]).value
+            ended_value = sheet.cell(current_row, header_map["ENDED"]).value
+            days_value = sheet.cell(current_row, header_map["DAYS"]).value
+            impressions_value = sheet.cell(current_row, header_map["IMPRESSIONS"]).value
+
+            if all(
+                value is None or str(value).strip() == ""
+                for value in [site_value, started_value, ended_value, days_value, impressions_value]
+            ):
+                current_row += 1
+                continue
+
+            site_name = get_site_top_line(site_value)
+            if not site_name:
+                current_row += 1
+                continue
+
+            rows.append(
+                {
+                    "Site Name and Code": site_name,
+                    "Start Date": format_day_month_year(started_value),
+                    "End Date": format_day_month_year(ended_value),
+                    "Run Time": f"{str(days_value).strip()} Days",
+                    "Impressions": format_impressions(impressions_value),
+                }
+            )
+            current_row += 1
+
+        if rows:
+            return rows
+
+    raise ValueError(
+        "Couldn't find a valid SITE / STARTED / ENDED / DAYS / IMPRESSIONS section in the uploaded Excel file."
+    )
 
 
 def _parse_date_string(value: str):
@@ -123,20 +236,49 @@ def replace_text_on_slide(slide, replacements: dict):
                 paragraph.text = ""
 
 
-def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str) -> BytesIO:
+def duplicate_slide(prs, slide_index: int):
+    source = prs.slides[slide_index]
+    blank_layout = prs.slide_layouts[6]
+    new_slide = prs.slides.add_slide(blank_layout)
+
+    for shape in source.shapes:
+        new_el = copy.deepcopy(shape.element)
+        new_slide.shapes._spTree.insert_element_before(new_el, "p:extLst")
+
+    for rel in source.part.rels.values():
+        if "notesSlide" in rel.reltype:
+            continue
+        new_slide.part.rels.add_relationship(rel.reltype, rel._target, rel.rId)
+
+    return new_slide
+
+
+def remove_slide(prs, slide_index: int):
+    slide_id_list = prs.slides._sldIdLst
+    slides = list(slide_id_list)
+    slide_id_list.remove(slides[slide_index])
+
+
+def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str, board_rows: list) -> BytesIO:
     if not PPTX_TEMPLATE_PATH.exists():
         raise FileNotFoundError(f"Template not found at: {PPTX_TEMPLATE_PATH}")
 
     if sales_rep not in REP_DATA:
         raise ValueError("Selected sales rep wasn't recognised.")
 
+    if not board_rows:
+        raise ValueError("No board rows were found in the uploaded Excel file.")
+
     rep = REP_DATA[sales_rep]
     prs = Presentation(str(PPTX_TEMPLATE_PATH))
 
-    if not prs.slides:
-        raise ValueError("The PPTX template has no slides.")
+    if len(prs.slides) < 3:
+        raise ValueError("The PPTX template must contain at least 3 slides: cover, board page, contact page.")
 
     cover_slide = prs.slides[0]
+    board_template_index = 1
+    contact_template_index = 2
+
     replace_text_on_slide(
         cover_slide,
         {
@@ -145,19 +287,27 @@ def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str) -> BytesIO
         },
     )
 
+    board_template_slide = prs.slides[board_template_index]
+    replace_text_on_slide(board_template_slide, board_rows[0])
+
+    for row_data in board_rows[1:]:
+        duplicated_board_slide = duplicate_slide(prs, board_template_index)
+        replace_text_on_slide(duplicated_board_slide, row_data)
+
+    duplicated_contact_slide = duplicate_slide(prs, contact_template_index)
     rep_contact_line = f'{rep["phone"]} | {rep["email"]}'
 
-    last_slide = prs.slides[-1]
     replace_text_on_slide(
-        last_slide,
+        duplicated_contact_slide,
         {
             "Rep Name!": rep["display_name"],
             "Rep Number | Rep Email": rep_contact_line,
+            "Rep Number  |  Rep Email": rep_contact_line,
             "Rep Number   |   Rep Email": rep_contact_line,
-            '"Rep Number" | Rep Email': rep_contact_line,
-            '"Rep Number"   |   Rep Email': rep_contact_line,
         },
     )
+
+    remove_slide(prs, contact_template_index)
 
     output = BytesIO()
     prs.save(output)
@@ -209,6 +359,15 @@ async def home():
                 font-weight: 700;
                 margin: 0 0 10px 0;
                 line-height: 1.1;
+            }}
+
+            .section-block {{
+                width: 100%;
+            }}
+
+            .section-block-spaced {{
+                width: 100%;
+                margin-top: 12px;
             }}
 
             .gawk-button {{
@@ -327,33 +486,33 @@ async def home():
 
         <form id="pcrForm" class="spec-section">
             <div class="section-inner">
-                <div style="width:100%;">
+                <div class="section-block">
                     <div class="section-label">Client Name</div>
                     <input
                         type="text"
                         id="clientName"
                         name="client_name"
                         class="client-name-input"
-                        placeholder="Client Name"
+                        placeholder=""
                         autocomplete="off"
                         required
                     />
                     <div class="field-note">Provide the Client Name above.</div>
                 </div>
 
-                <div style="width:100%;">
+                <div class="section-block">
                     <div class="section-label">Sales Representative</div>
                     <select id="salesRep" name="sales_rep" class="dropdown" required>
-                        <option value="" selected disabled>Select Sales Rep</option>
+                        <option value="" selected disabled></option>
                         {options_html}
                     </select>
                     <div class="field-note">Select the Sales Representative above.</div>
                 </div>
 
-                <div style="width:100%;">
-                    <div class="section-label">PCR Numbers File</div>
+                <div class="section-block-spaced">
+                    <div class="section-label">Upload PCR Numbers File</div>
                     <div class="drop-area" id="dropArea">
-                        <p>Drag & drop PCR Numbers Excel here!</p>
+                        <p>Drag & drop here!</p>
                         <button type="button" class="gawk-button browse-btn" id="browseBtn">Browse File</button>
                         <input
                             type="file"
@@ -493,7 +652,7 @@ async def home():
                     anchor.remove();
                     window.URL.revokeObjectURL(url);
 
-                    statusMessage.textContent = "Done. Your PCR has been downloaded.";
+                    statusMessage.textContent = "Done. Your PCR PPTX has been downloaded.";
                 }} catch (error) {{
                     statusMessage.textContent = error.message || "Failed to build PCR.";
                 }} finally {{
@@ -534,10 +693,12 @@ async def build_pcr(
     try:
         file_bytes = await excel_file.read()
         month_year = extract_month_year_from_excel(file_bytes)
+        board_rows = extract_board_rows(file_bytes)
         pptx_stream = build_pcr_pptx(
             client_name=client_name,
             month_year=month_year,
             sales_rep=sales_rep,
+            board_rows=board_rows,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
