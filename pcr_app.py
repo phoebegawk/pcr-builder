@@ -429,16 +429,16 @@ async def home():
                         body: formData
                     }});
 
-                    if (!response.ok) {
+                    if (!response.ok) {{
                         let errorText = "Something went wrong building the PCR.";
-                        try {
+                        try {{
                             const errorJson = await response.json();
                             errorText = errorJson.detail || errorText;
-                        } catch {
+                        }} catch {{
                             errorText = "Something went wrong building the PCR.";
-                        }
+                        }}
                         throw new Error(errorText);
-                    }
+                    }}
 
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
@@ -506,7 +506,7 @@ async def build_pcr(
     output_filename = f"PCR_Report_{safe_client}_{safe_month}.pptx"
 
     headers = {
-    "Content-Disposition": f'attachment; filename="{output_filename}"'
+        "Content-Disposition": f'attachment; filename="{output_filename}"'
     }
 
     return StreamingResponse(
