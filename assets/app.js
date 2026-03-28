@@ -18,17 +18,19 @@ const salesRepSelect = document.getElementById("salesRep");
 const contractNumberInput = document.getElementById("contractNumber");
 
 const excelFileInput = document.getElementById("excelFile");
+const excelBrowseBtn = document.getElementById("excelBrowseBtn");
+const excelDropArea = document.getElementById("excelDropArea");
+const excelUploadConfirm = document.getElementById("excelUploadConfirm");
+const excelUploadConfirmText = document.getElementById("excelUploadConfirmText");
+
 const imageFilesInput = document.getElementById("imageFiles");
-const browseBtn = document.getElementById("browseBtn");
 const imageBrowseBtn = document.getElementById("imageBrowseBtn");
-const buildBtn = document.getElementById("buildBtn");
-const resetBtn = document.getElementById("resetBtn");
-const dropArea = document.getElementById("dropArea");
 const imageDropArea = document.getElementById("imageDropArea");
-const uploadConfirm = document.getElementById("uploadConfirm");
-const uploadConfirmText = document.getElementById("uploadConfirmText");
 const imageUploadConfirm = document.getElementById("imageUploadConfirm");
 const imageUploadConfirmText = document.getElementById("imageUploadConfirmText");
+
+const buildBtn = document.getElementById("buildBtn");
+const resetBtn = document.getElementById("resetBtn");
 const statusMessage = document.getElementById("statusMessage");
 
 manualToggleBtn.addEventListener("click", () => {
@@ -36,7 +38,7 @@ manualToggleBtn.addEventListener("click", () => {
 });
 
 adoBrowseBtn.addEventListener("click", () => adoFileInput.click());
-browseBtn.addEventListener("click", () => excelFileInput.click());
+excelBrowseBtn.addEventListener("click", () => excelFileInput.click());
 imageBrowseBtn.addEventListener("click", () => imageFilesInput.click());
 
 adoFileInput.addEventListener("change", () => {
@@ -52,7 +54,7 @@ imageFilesInput.addEventListener("change", () => {
 });
 
 ["dragenter", "dragover"].forEach((eventName) => {
-    [adoDropArea, dropArea, imageDropArea].forEach((area) => {
+    [adoDropArea, excelDropArea, imageDropArea].forEach((area) => {
         area.addEventListener(eventName, (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -62,7 +64,7 @@ imageFilesInput.addEventListener("change", () => {
 });
 
 ["dragleave", "drop"].forEach((eventName) => {
-    [adoDropArea, dropArea, imageDropArea].forEach((area) => {
+    [adoDropArea, excelDropArea, imageDropArea].forEach((area) => {
         area.addEventListener(eventName, (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -81,7 +83,7 @@ adoDropArea.addEventListener("drop", (e) => {
     updateSelectedAdoFile();
 });
 
-dropArea.addEventListener("drop", (e) => {
+excelDropArea.addEventListener("drop", (e) => {
     const files = e.dataTransfer.files;
     if (!files || !files.length) return;
 
@@ -163,11 +165,11 @@ async function updateSelectedAdoFile() {
 
 function updateSelectedExcelFile() {
     if (excelFileInput.files && excelFileInput.files.length > 0) {
-        uploadConfirm.classList.remove("hidden");
-        uploadConfirmText.textContent = `File ready: ${excelFileInput.files[0].name}`;
+        excelUploadConfirm.classList.remove("hidden");
+        excelUploadConfirmText.textContent = `File ready: ${excelFileInput.files[0].name}`;
         statusMessage.textContent = "";
     } else {
-        uploadConfirm.classList.add("hidden");
+        excelUploadConfirm.classList.add("hidden");
     }
 }
 
@@ -182,9 +184,9 @@ function updateSelectedImageFiles() {
 }
 
 buildBtn.addEventListener("click", async () => {
-    const clientName = clientNameInput.value.trim();
-    const salesRep = salesRepSelect.value.trim();
-    const contractNumber = contractNumberInput.value.trim();
+    const clientName = clientNameInput ? clientNameInput.value.trim() : "";
+    const salesRep = salesRepSelect ? salesRepSelect.value.trim() : "";
+    const contractNumber = contractNumberInput ? contractNumberInput.value.trim() : "";
     const excelFile = excelFileInput.files[0];
     const adoFile = adoFileInput.files[0];
 
@@ -237,6 +239,7 @@ buildBtn.addEventListener("click", async () => {
         const anchor = document.createElement("a");
         const disposition = response.headers.get("Content-Disposition") || "";
         const match = disposition.match(/filename="([^"]+)"/);
+
         anchor.href = url;
         anchor.download = match ? match[1] : "PCR_Report.pptx";
         document.body.appendChild(anchor);
@@ -254,15 +257,19 @@ buildBtn.addEventListener("click", async () => {
 
 resetBtn.addEventListener("click", () => {
     form.reset();
+
     adoFileInput.value = "";
     excelFileInput.value = "";
     imageFilesInput.value = "";
+
     adoUploadConfirm.classList.add("hidden");
-    uploadConfirm.classList.add("hidden");
+    excelUploadConfirm.classList.add("hidden");
     imageUploadConfirm.classList.add("hidden");
+
     adoPreview.classList.remove("visible");
     adoPreviewClientName.textContent = "—";
     adoPreviewSalesRep.textContent = "—";
     adoPreviewContractNumber.textContent = "—";
+
     statusMessage.textContent = "";
 });
