@@ -53,18 +53,19 @@ def format_month_year(value) -> str:
 
 
 def format_day_month_year(value) -> str:
+    parsed = None
+
     if isinstance(value, datetime):
-        return value.strftime("%-d %b, %Y")
-
-    if hasattr(value, "strftime"):
-        return value.strftime("%-d %b, %Y")
-
-    if isinstance(value, str) and value.strip():
+        parsed = value
+    elif hasattr(value, "strftime"):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
         parsed = _parse_date_string(value.strip())
-        if parsed:
-            return parsed.strftime("%-d %b, %Y")
 
-    raise ValueError(f"Couldn't format date value: {value}")
+    if not parsed:
+        raise ValueError(f"Couldn't format date value: {value}")
+
+    return f"{parsed.day} {parsed.strftime('%b')}, {parsed.year}"
 
 
 def format_impressions(value) -> str:
@@ -117,11 +118,11 @@ def extract_board_rows(file_bytes: bytes):
     workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
 
     required_headers = {
-        "SITE": None,
-        "STARTED": None,
-        "ENDED": None,
-        "DAYS": None,
-        "IMPRESSIONS": None,
+        "SITE",
+        "STARTED",
+        "ENDED",
+        "DAYS",
+        "IMPRESSIONS",
     }
 
     for sheet in workbook.worksheets:
@@ -136,7 +137,7 @@ def extract_board_rows(file_bytes: bytes):
                     if header_text in required_headers:
                         current_map[header_text] = cell.column
 
-            if all(key in current_map for key in required_headers):
+            if required_headers.issubset(current_map.keys()):
                 header_row_idx = row[0].row
                 header_map = current_map
                 break
@@ -236,24 +237,33 @@ def replace_text_on_slide(slide, replacements: dict):
                 paragraph.text = ""
 
 
+def remap_rel_ids_in_element(element, rel_map):
+    for el in element.iter():
+        for attr_name, attr_value in list(el.attrib.items()):
+            if attr_value in rel_map:
+                el.set(attr_name, rel_map[attr_value])
+
+
 def duplicate_slide(prs, slide_index: int):
     source = prs.slides[slide_index]
     blank_layout = prs.slide_layouts[6]
     new_slide = prs.slides.add_slide(blank_layout)
 
-    for shape in source.shapes:
-        new_el = copy.deepcopy(shape.element)
-        new_slide.shapes._spTree.insert_element_before(new_el, "p:extLst")
-
+    rel_map = {}
     for rel in source.part.rels.values():
         if "notesSlide" in rel.reltype:
             continue
-        new_slide.part.rels._add_relationship(
+        new_rid = new_slide.part.rels._add_relationship(
             rel.reltype,
             rel._target,
-            rel.rId,
-            is_external=rel.is_external,
+            rel.is_external,
         )
+        rel_map[rel.rId] = new_rid
+
+    for shape in source.shapes:
+        new_el = copy.deepcopy(shape.element)
+        remap_rel_ids_in_element(new_el, rel_map)
+        new_slide.shapes._spTree.insert_element_before(new_el, "p:extLst")
 
     return new_slide
 
@@ -280,30 +290,28 @@ def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str, board_rows
     if len(prs.slides) < 3:
         raise ValueError("The PPTX template must contain at least 3 slides: cover, board page, contact page.")
 
-    cover_slide = prs.slides[0]
     board_template_index = 1
     contact_template_index = 2
 
     replace_text_on_slide(
-        cover_slide,
+        prs.slides[0],
         {
             "Client Name": client_name,
             "Month Year": month_year,
         },
     )
 
-    board_template_slide = prs.slides[board_template_index]
-    replace_text_on_slide(board_template_slide, board_rows[0])
+    replace_text_on_slide(prs.slides[board_template_index], board_rows[0])
 
     for row_data in board_rows[1:]:
         duplicated_board_slide = duplicate_slide(prs, board_template_index)
         replace_text_on_slide(duplicated_board_slide, row_data)
 
-    duplicated_contact_slide = duplicate_slide(prs, contact_template_index)
+    contact_slide = duplicate_slide(prs, contact_template_index)
     rep_contact_line = f'{rep["phone"]} | {rep["email"]}'
 
     replace_text_on_slide(
-        duplicated_contact_slide,
+        contact_slide,
         {
             "Rep Name!": rep["display_name"],
             "Rep Number | Rep Email": rep_contact_line,
@@ -326,7 +334,7 @@ def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str, board_rows
 @app.get("/", response_class=HTMLResponse)
 async def home():
     options_html = "".join(
-        f'<option value="{rep}">{rep}</option>' for rep in DROPDOWN_REPS
+        f'<option value="{rep}"></option>' for rep in DROPDOWN_REPS
     )
 
     return f"""
@@ -507,10 +515,19 @@ async def home():
 
                 <div class="section-block">
                     <div class="section-label">Sales Representative</div>
-                    <select id="salesRep" name="sales_rep" class="dropdown" required>
-                        <option value="" selected disabled></option>
+                    <input
+                        type="text"
+                        id="salesRep"
+                        name="sales_rep"
+                        class="dropdown"
+                        list="salesRepOptions"
+                        placeholder=""
+                        autocomplete="off"
+                        required
+                    />
+                    <datalist id="salesRepOptions">
                         {options_html}
-                    </select>
+                    </datalist>
                     <div class="field-note">Select the Sales Representative above.</div>
                 </div>
 
@@ -600,7 +617,7 @@ async def home():
 
             buildBtn.addEventListener("click", async () => {{
                 const clientName = clientNameInput.value.trim();
-                const salesRep = salesRepSelect.value;
+                const salesRep = salesRepSelect.value.trim();
                 const file = excelFileInput.files[0];
 
                 if (!clientName) {{
@@ -710,18 +727,4 @@ async def build_pcr(
 
     safe_client = clean_filename_part(client_name).replace(" ", "_")
     safe_month = month_year.replace(" ", "_")
-    output_filename = f"PCR_Report_{safe_client}_{safe_month}.pptx"
-
-    headers = {
-        "Content-Disposition": f'attachment; filename="{output_filename}"'
-    }
-
-    return StreamingResponse(
-        pptx_stream,
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        headers=headers,
-    )
-
-
-if __name__ == "__main__":
-    uvicorn.run("pcr_app:app", host="0.0.0.0", port=8000, reload=True)
+    output_filename = f"PCR_Report_{
