@@ -58,9 +58,9 @@ async def home():
                 </div>
 
                 <div class="section-block">
-                    <div class="section-label">Upload ADO PDF</div>
+                    <div class="section-label">Upload ADO</div>
                     <div class="drop-area" id="adoDropArea">
-                        <p>Drag & drop ADO PDF here!</p>
+                        <p>Drag & drop PDF here!</p>
                         <button type="button" class="gawk-button browse-btn" id="adoBrowseBtn">Browse File</button>
                         <input
                             type="file"
@@ -136,7 +136,7 @@ async def home():
                 </div>
 
                 <div class="section-block-spaced">
-                    <div class="section-label">Upload PCR Numbers File</div>
+                    <div class="section-label">Upload PCR Numbers</div>
                     <div class="drop-area" id="excelDropArea">
                         <p>Drag & drop Excel file here!</p>
                         <button type="button" class="gawk-button browse-btn" id="excelBrowseBtn">Browse File</button>
