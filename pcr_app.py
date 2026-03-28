@@ -240,6 +240,13 @@ def extract_ado_contract_fields(pdf_bytes: bytes) -> dict:
         "contract_number": contract_number,
     }
 
+def extract_ado_preview_data(pdf_bytes: bytes) -> dict:
+    extracted = extract_ado_contract_fields(pdf_bytes)
+    return {
+        "client_name": extracted.get("client_name", ""),
+        "sales_rep": extracted.get("sales_rep", ""),
+        "contract_number": extracted.get("contract_number", ""),
+    }
 
 def choose_contract_value(manual_value: str, ado_value: str, label: str) -> str:
     manual_value = normalize_text(manual_value or "")
@@ -558,13 +565,14 @@ async def home():
 
             .section-block-spaced {{
                 width: 100%;
-                margin-top: 12px;
+                margin-top: 20px;
             }}
 
             .manual-section {{
                 display: none;
-                margin-top: 14px;
-                padding-top: 10px;
+                width: 100%;
+                margin-top: 18px;
+                padding-top: 18px;
                 border-top: 2px dashed rgba(84, 45, 84, 0.25);
             }}
 
@@ -573,10 +581,14 @@ async def home():
             }}
 
             .secondary-button {{
-                background: #FFFFFF;
+                background: #d9b3db;
                 color: #542D54;
-                border: 3px solid #D7DF23;
-                min-width: 220px;
+                border: none;
+                min-width: 320px;
+            }}
+
+            .secondary-button:hover {{
+                transform: translateY(-1px);
             }}
 
             .gawk-button {{
@@ -622,6 +634,10 @@ async def home():
                 min-width: 140px;
             }}
 
+            .upload-confirm {{
+                margin-top: 10px;
+            }}
+
             .upload-confirm-text {{
                 color: #542D54;
                 font-weight: 700;
@@ -654,6 +670,7 @@ async def home():
                 font-weight: 700;
                 font-size: 14px;
                 min-height: 20px;
+                margin-top: 12px;
             }}
 
             .dropdown {{
@@ -667,6 +684,44 @@ async def home():
                 font-weight: 600;
             }}
 
+            .extracted-preview {{
+                display: none;
+                width: 100%;
+                margin-top: 14px;
+                padding: 16px 18px;
+                border: 2px solid rgba(215, 223, 35, 0.9);
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.92);
+            }}
+
+            .extracted-preview.visible {{
+                display: block;
+            }}
+
+            .extracted-preview-title {{
+                color: #542D54;
+                font-size: 20px;
+                font-weight: 700;
+                margin-bottom: 12px;
+            }}
+
+            .extracted-preview-grid {{
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }}
+
+            .extracted-preview-item {{
+                color: #542D54;
+                font-size: 14px;
+                font-weight: 600;
+                line-height: 1.4;
+            }}
+
+            .extracted-preview-label {{
+                font-weight: 700;
+            }}
+
             @media (max-width: 768px) {{
                 body {{
                     padding: 20px;
@@ -678,6 +733,10 @@ async def home():
 
                 .section-label {{
                     font-size: 20px;
+                }}
+
+                .secondary-button {{
+                    min-width: 100%;
                 }}
             }}
         </style>
@@ -695,6 +754,11 @@ async def home():
 
         <form id="pcrForm" class="spec-section">
             <div class="section-inner">
+
+                <div class="actions-row" style="margin: 0 0 8px 0;">
+                    <button type="button" id="manualToggleBtn" class="gawk-button secondary-button">Manual Contract Information Entry</button>
+                </div>
+
                 <div class="section-block">
                     <div class="section-label">Upload ADO PDF</div>
                     <div class="drop-area" id="adoDropArea">
@@ -708,10 +772,28 @@ async def home():
                         />
                     </div>
                     <div class="field-note">Used to extract Client Name, Sales Representative, and Contract Number.</div>
-                </div>
 
-                <div class="actions-row" style="margin-top: 16px;">
-                    <button type="button" id="manualToggleBtn" class="gawk-button secondary-button">Manual Contract Information Entry</button>
+                    <div class="upload-confirm hidden" id="adoUploadConfirm">
+                        <div class="upload-confirm-text" id="adoUploadConfirmText">ADO ready.</div>
+                    </div>
+
+                    <div class="extracted-preview" id="adoPreview">
+                        <div class="extracted-preview-title">Extracted Contract Info</div>
+                        <div class="extracted-preview-grid">
+                            <div class="extracted-preview-item">
+                                <span class="extracted-preview-label">Client Name:</span>
+                                <span id="adoPreviewClientName">—</span>
+                            </div>
+                            <div class="extracted-preview-item">
+                                <span class="extracted-preview-label">Sales Representative:</span>
+                                <span id="adoPreviewSalesRep">—</span>
+                            </div>
+                            <div class="extracted-preview-item">
+                                <span class="extracted-preview-label">Contract Number:</span>
+                                <span id="adoPreviewContractNumber">—</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="manualSection" class="manual-section">
@@ -772,6 +854,10 @@ async def home():
                             required
                         />
                     </div>
+
+                    <div class="upload-confirm hidden" id="uploadConfirm">
+                        <div class="upload-confirm-text" id="uploadConfirmText">File ready.</div>
+                    </div>
                 </div>
 
                 <div class="section-block-spaced">
@@ -787,18 +873,10 @@ async def home():
                             multiple
                         />
                     </div>
-                </div>
 
-                <div class="upload-confirm hidden" id="adoUploadConfirm">
-                    <div class="upload-confirm-text" id="adoUploadConfirmText">ADO ready.</div>
-                </div>
-
-                <div class="upload-confirm hidden" id="uploadConfirm">
-                    <div class="upload-confirm-text" id="uploadConfirmText">File ready.</div>
-                </div>
-
-                <div class="upload-confirm hidden" id="imageUploadConfirm">
-                    <div class="upload-confirm-text" id="imageUploadConfirmText">Images ready.</div>
+                    <div class="upload-confirm hidden" id="imageUploadConfirm">
+                        <div class="upload-confirm-text" id="imageUploadConfirmText">Images ready.</div>
+                    </div>
                 </div>
 
                 <div class="status-message" id="statusMessage"></div>
@@ -821,6 +899,11 @@ async def home():
             const adoDropArea = document.getElementById("adoDropArea");
             const adoUploadConfirm = document.getElementById("adoUploadConfirm");
             const adoUploadConfirmText = document.getElementById("adoUploadConfirmText");
+
+            const adoPreview = document.getElementById("adoPreview");
+            const adoPreviewClientName = document.getElementById("adoPreviewClientName");
+            const adoPreviewSalesRep = document.getElementById("adoPreviewSalesRep");
+            const adoPreviewContractNumber = document.getElementById("adoPreviewContractNumber");
 
             const clientNameInput = document.getElementById("clientName");
             const salesRepSelect = document.getElementById("salesRep");
@@ -912,13 +995,61 @@ async def home():
                 updateSelectedImageFiles();
             }});
 
-            function updateSelectedAdoFile() {{
+            async function updateSelectedAdoFile() {{
                 if (adoFileInput.files && adoFileInput.files.length > 0) {{
                     adoUploadConfirm.classList.remove("hidden");
                     adoUploadConfirmText.textContent = `ADO ready: ${{adoFileInput.files[0].name}}`;
                     statusMessage.textContent = "";
+
+                    const formData = new FormData();
+                    formData.append("ado_file", adoFileInput.files[0]);
+
+                    try {{
+                        const response = await fetch("/extract-ado", {{
+                            method: "POST",
+                            body: formData
+                        }});
+
+                        if (!response.ok) {{
+                            let errorText = "Couldn't extract fields from the ADO.";
+                            try {{
+                                const errorJson = await response.json();
+                                errorText = errorJson.detail || errorText;
+                            }} catch {{
+                                errorText = "Couldn't extract fields from the ADO.";
+                            }}
+                            throw new Error(errorText);
+                        }}
+
+                        const data = await response.json();
+
+                        adoPreviewClientName.textContent = data.client_name || "—";
+                        adoPreviewSalesRep.textContent = data.sales_rep || "—";
+                        adoPreviewContractNumber.textContent = data.contract_number || "—";
+                        adoPreview.classList.add("visible");
+
+                        if (data.client_name && !clientNameInput.value.trim()) {{
+                            clientNameInput.value = data.client_name;
+                        }}
+                        if (data.sales_rep && !salesRepSelect.value.trim()) {{
+                            salesRepSelect.value = data.sales_rep;
+                        }}
+                        if (data.contract_number && !contractNumberInput.value.trim()) {{
+                            contractNumberInput.value = data.contract_number;
+                        }}
+                    }} catch (error) {{
+                        adoPreview.classList.remove("visible");
+                        adoPreviewClientName.textContent = "—";
+                        adoPreviewSalesRep.textContent = "—";
+                        adoPreviewContractNumber.textContent = "—";
+                        statusMessage.textContent = error.message || "Failed to read ADO.";
+                    }}
                 }} else {{
                     adoUploadConfirm.classList.add("hidden");
+                    adoPreview.classList.remove("visible");
+                    adoPreviewClientName.textContent = "—";
+                    adoPreviewSalesRep.textContent = "—";
+                    adoPreviewContractNumber.textContent = "—";
                 }}
             }}
 
@@ -1021,12 +1152,30 @@ async def home():
                 adoUploadConfirm.classList.add("hidden");
                 uploadConfirm.classList.add("hidden");
                 imageUploadConfirm.classList.add("hidden");
+                adoPreview.classList.remove("visible");
+                adoPreviewClientName.textContent = "—";
+                adoPreviewSalesRep.textContent = "—";
+                adoPreviewContractNumber.textContent = "—";
                 statusMessage.textContent = "";
             }});
         </script>
     </body>
     </html>
     """
+@app.post("/extract-ado")
+async def extract_ado(
+    ado_file: UploadFile = File(...),
+):
+    if not ado_file.filename or not ado_file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a valid ADO PDF.")
+
+    try:
+        pdf_bytes = await ado_file.read()
+        preview_data = extract_ado_preview_data(pdf_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return preview_data
 
 
 @app.post("/build")
