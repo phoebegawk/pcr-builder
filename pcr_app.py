@@ -9,6 +9,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from PIL import Image, UnidentifiedImageError
 import uvicorn
 
 from rep_data import REP_DATA, DROPDOWN_REPS
@@ -35,6 +37,10 @@ def clean_filename_part(value: str) -> str:
 
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value).strip())
+
+
+def normalize_match_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value).lower())
 
 
 def format_month_year(value) -> str:
@@ -237,44 +243,150 @@ def replace_text_on_slide(slide, replacements: dict):
                 paragraph.text = ""
 
 
-def remap_rel_ids_in_element(element, rel_map):
-    for el in element.iter():
-        for attr_name, attr_value in list(el.attrib.items()):
-            if attr_value in rel_map:
-                el.set(attr_name, rel_map[attr_value])
-
-
-def duplicate_slide(prs, slide_index: int):
+def duplicate_slide_safe(prs, slide_index: int):
     source = prs.slides[slide_index]
     blank_layout = prs.slide_layouts[6]
     new_slide = prs.slides.add_slide(blank_layout)
 
-    rel_map = {}
-    for rel in source.part.rels.values():
-        if "notesSlide" in rel.reltype:
-            continue
-        new_rid = new_slide.part.rels._add_relationship(
-            rel.reltype,
-            rel._target,
-            rel.is_external,
-        )
-        rel_map[rel.rId] = new_rid
-
     for shape in source.shapes:
-        new_el = copy.deepcopy(shape.element)
-        remap_rel_ids_in_element(new_el, rel_map)
-        new_slide.shapes._spTree.insert_element_before(new_el, "p:extLst")
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            image_stream = BytesIO(shape.image.blob)
+            new_slide.shapes.add_picture(
+                image_stream,
+                shape.left,
+                shape.top,
+                width=shape.width,
+                height=shape.height,
+            )
+        else:
+            new_el = copy.deepcopy(shape.element)
+            new_slide.shapes._spTree.insert_element_before(new_el, "p:extLst")
 
     return new_slide
 
 
-def remove_slide(prs, slide_index: int):
+def move_slide_to_end(prs, slide_index: int):
     slide_id_list = prs.slides._sldIdLst
     slides = list(slide_id_list)
-    slide_id_list.remove(slides[slide_index])
+    slide = slides[slide_index]
+    slide_id_list.remove(slide)
+    slide_id_list.append(slide)
 
 
-def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str, board_rows: list) -> BytesIO:
+def find_board_placeholder_picture(slide, slide_width, slide_height):
+    pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    if not pictures:
+        return None
+
+    slide_area = slide_width * slide_height
+
+    filtered = [
+        pic for pic in pictures
+        if (pic.width * pic.height) < (slide_area * 0.80)
+    ]
+
+    candidates = filtered if filtered else pictures
+    return max(candidates, key=lambda pic: pic.width * pic.height)
+
+
+def delete_shape(shape):
+    sp = shape.element
+    sp.getparent().remove(sp)
+
+
+def fit_image_within_bounds(image_bytes: bytes, bounds_width: int, bounds_height: int):
+    try:
+        with Image.open(BytesIO(image_bytes)) as img:
+            img_width, img_height = img.size
+    except UnidentifiedImageError as exc:
+        raise ValueError("One of the uploaded image files could not be read.") from exc
+
+    if img_width <= 0 or img_height <= 0:
+        raise ValueError("One of the uploaded image files has invalid dimensions.")
+
+    scale = min(bounds_width / img_width, bounds_height / img_height)
+    fitted_width = int(img_width * scale)
+    fitted_height = int(img_height * scale)
+
+    return fitted_width, fitted_height
+
+
+def replace_board_placeholder_image(slide, slide_width, slide_height, image_bytes: bytes):
+    placeholder = find_board_placeholder_picture(slide, slide_width, slide_height)
+    if not placeholder:
+        return
+
+    left = placeholder.left
+    top = placeholder.top
+    width = placeholder.width
+    height = placeholder.height
+
+    fitted_width, fitted_height = fit_image_within_bounds(image_bytes, width, height)
+
+    new_left = left + int((width - fitted_width) / 2)
+    new_top = top + int((height - fitted_height) / 2)
+
+    delete_shape(placeholder)
+    slide.shapes.add_picture(
+        BytesIO(image_bytes),
+        new_left,
+        new_top,
+        width=fitted_width,
+        height=fitted_height,
+    )
+
+
+def collect_uploaded_images(board_images: list[UploadFile]):
+    allowed_extensions = (".jpg", ".jpeg", ".png")
+    collected = []
+
+    for image in board_images:
+        if not image.filename:
+            continue
+
+        if not image.filename.lower().endswith(allowed_extensions):
+            raise ValueError(
+                f"Invalid image file '{image.filename}'. Only JPG, JPEG and PNG are allowed."
+            )
+
+        collected.append(image)
+
+    return collected
+
+
+async def read_uploaded_images(board_images: list[UploadFile]):
+    uploaded = []
+    for image in collect_uploaded_images(board_images):
+        image_bytes = await image.read()
+        uploaded.append(
+            {
+                "filename": image.filename,
+                "match_key": normalize_match_key(Path(image.filename).stem),
+                "bytes": image_bytes,
+            }
+        )
+    return uploaded
+
+
+def find_matching_image_bytes(site_name: str, uploaded_images: list[dict]):
+    site_key = normalize_match_key(site_name)
+    if not site_key:
+        return None
+
+    for image in uploaded_images:
+        if site_key in image["match_key"]:
+            return image["bytes"]
+
+    return None
+
+
+def build_pcr_pptx(
+    client_name: str,
+    month_year: str,
+    sales_rep: str,
+    board_rows: list,
+    uploaded_images: list[dict],
+) -> BytesIO:
     if not PPTX_TEMPLATE_PATH.exists():
         raise FileNotFoundError(f"Template not found at: {PPTX_TEMPLATE_PATH}")
 
@@ -290,24 +402,44 @@ def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str, board_rows
     if len(prs.slides) < 3:
         raise ValueError("The PPTX template must contain at least 3 slides: cover, board page, contact page.")
 
+    cover_slide = prs.slides[0]
     board_template_index = 1
-    contact_template_index = 2
+    contact_slide_index = 2
 
     replace_text_on_slide(
-        prs.slides[0],
+        cover_slide,
         {
             "Client Name": client_name,
             "Month Year": month_year,
         },
     )
 
-    replace_text_on_slide(prs.slides[board_template_index], board_rows[0])
+    first_board_slide = prs.slides[board_template_index]
+    replace_text_on_slide(first_board_slide, board_rows[0])
+
+    matched_image = find_matching_image_bytes(board_rows[0]["Site Name and Code"], uploaded_images)
+    if matched_image:
+        replace_board_placeholder_image(
+            first_board_slide,
+            prs.slide_width,
+            prs.slide_height,
+            matched_image,
+        )
 
     for row_data in board_rows[1:]:
-        duplicated_board_slide = duplicate_slide(prs, board_template_index)
+        duplicated_board_slide = duplicate_slide_safe(prs, board_template_index)
         replace_text_on_slide(duplicated_board_slide, row_data)
 
-    contact_slide = duplicate_slide(prs, contact_template_index)
+        matched_image = find_matching_image_bytes(row_data["Site Name and Code"], uploaded_images)
+        if matched_image:
+            replace_board_placeholder_image(
+                duplicated_board_slide,
+                prs.slide_width,
+                prs.slide_height,
+                matched_image,
+            )
+
+    contact_slide = prs.slides[contact_slide_index]
     rep_contact_line = f'{rep["phone"]} | {rep["email"]}'
 
     replace_text_on_slide(
@@ -320,7 +452,7 @@ def build_pcr_pptx(client_name: str, month_year: str, sales_rep: str, board_rows
         },
     )
 
-    remove_slide(prs, contact_template_index)
+    move_slide_to_end(prs, contact_slide_index)
 
     output = BytesIO()
     prs.save(output)
@@ -546,8 +678,28 @@ async def home():
                     </div>
                 </div>
 
+                <div class="section-block-spaced">
+                    <div class="section-label">Upload Board Images</div>
+                    <div class="drop-area" id="imageDropArea">
+                        <p>Drag & drop here!</p>
+                        <button type="button" class="gawk-button browse-btn" id="imageBrowseBtn">Browse Files</button>
+                        <input
+                            type="file"
+                            id="imageFiles"
+                            class="file-input"
+                            accept=".jpg,.jpeg,.png"
+                            multiple
+                        />
+                    </div>
+                    <div class="field-note">Upload JPG, JPEG or PNG images. Each filename should include the site name it belongs to.</div>
+                </div>
+
                 <div class="upload-confirm hidden" id="uploadConfirm">
                     <div class="upload-confirm-text" id="uploadConfirmText">File ready.</div>
+                </div>
+
+                <div class="upload-confirm hidden" id="imageUploadConfirm">
+                    <div class="upload-confirm-text" id="imageUploadConfirmText">Images ready.</div>
                 </div>
 
                 <div class="status-message" id="statusMessage"></div>
@@ -565,18 +717,28 @@ async def home():
             const clientNameInput = document.getElementById("clientName");
             const salesRepSelect = document.getElementById("salesRep");
             const excelFileInput = document.getElementById("excelFile");
+            const imageFilesInput = document.getElementById("imageFiles");
             const browseBtn = document.getElementById("browseBtn");
+            const imageBrowseBtn = document.getElementById("imageBrowseBtn");
             const buildBtn = document.getElementById("buildBtn");
             const resetBtn = document.getElementById("resetBtn");
             const dropArea = document.getElementById("dropArea");
+            const imageDropArea = document.getElementById("imageDropArea");
             const uploadConfirm = document.getElementById("uploadConfirm");
             const uploadConfirmText = document.getElementById("uploadConfirmText");
+            const imageUploadConfirm = document.getElementById("imageUploadConfirm");
+            const imageUploadConfirmText = document.getElementById("imageUploadConfirmText");
             const statusMessage = document.getElementById("statusMessage");
 
             browseBtn.addEventListener("click", () => excelFileInput.click());
+            imageBrowseBtn.addEventListener("click", () => imageFilesInput.click());
 
             excelFileInput.addEventListener("change", () => {{
-                updateSelectedFile();
+                updateSelectedExcelFile();
+            }});
+
+            imageFilesInput.addEventListener("change", () => {{
+                updateSelectedImageFiles();
             }});
 
             ["dragenter", "dragover"].forEach(eventName => {{
@@ -585,6 +747,12 @@ async def home():
                     e.stopPropagation();
                     dropArea.classList.add("drag-over");
                 }});
+
+                imageDropArea.addEventListener(eventName, (e) => {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    imageDropArea.classList.add("drag-over");
+                }});
             }});
 
             ["dragleave", "drop"].forEach(eventName => {{
@@ -592,6 +760,12 @@ async def home():
                     e.preventDefault();
                     e.stopPropagation();
                     dropArea.classList.remove("drag-over");
+                }});
+
+                imageDropArea.addEventListener(eventName, (e) => {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    imageDropArea.classList.remove("drag-over");
                 }});
             }});
 
@@ -602,10 +776,22 @@ async def home():
                 const dt = new DataTransfer();
                 dt.items.add(files[0]);
                 excelFileInput.files = dt.files;
-                updateSelectedFile();
+                updateSelectedExcelFile();
             }});
 
-            function updateSelectedFile() {{
+            imageDropArea.addEventListener("drop", (e) => {{
+                const files = e.dataTransfer.files;
+                if (!files || !files.length) return;
+
+                const dt = new DataTransfer();
+                for (let i = 0; i < files.length; i++) {{
+                    dt.items.add(files[i]);
+                }}
+                imageFilesInput.files = dt.files;
+                updateSelectedImageFiles();
+            }});
+
+            function updateSelectedExcelFile() {{
                 if (excelFileInput.files && excelFileInput.files.length > 0) {{
                     uploadConfirm.classList.remove("hidden");
                     uploadConfirmText.textContent = `File ready: ${{excelFileInput.files[0].name}}`;
@@ -615,10 +801,20 @@ async def home():
                 }}
             }}
 
+            function updateSelectedImageFiles() {{
+                if (imageFilesInput.files && imageFilesInput.files.length > 0) {{
+                    imageUploadConfirm.classList.remove("hidden");
+                    imageUploadConfirmText.textContent = `${{imageFilesInput.files.length}} image file(s) ready`;
+                    statusMessage.textContent = "";
+                }} else {{
+                    imageUploadConfirm.classList.add("hidden");
+                }}
+            }}
+
             buildBtn.addEventListener("click", async () => {{
                 const clientName = clientNameInput.value.trim();
                 const salesRep = salesRepSelect.value.trim();
-                const file = excelFileInput.files[0];
+                const excelFile = excelFileInput.files[0];
 
                 if (!clientName) {{
                     statusMessage.textContent = "Please enter a client name.";
@@ -632,7 +828,7 @@ async def home():
                     return;
                 }}
 
-                if (!file) {{
+                if (!excelFile) {{
                     statusMessage.textContent = "Please upload a PCR Numbers Excel file.";
                     return;
                 }}
@@ -643,7 +839,11 @@ async def home():
                 const formData = new FormData();
                 formData.append("client_name", clientName);
                 formData.append("sales_rep", salesRep);
-                formData.append("excel_file", file);
+                formData.append("excel_file", excelFile);
+
+                for (let i = 0; i < imageFilesInput.files.length; i++) {{
+                    formData.append("board_images", imageFilesInput.files[i]);
+                }}
 
                 try {{
                     const response = await fetch("/build", {{
@@ -685,7 +885,9 @@ async def home():
             resetBtn.addEventListener("click", () => {{
                 form.reset();
                 excelFileInput.value = "";
+                imageFilesInput.value = "";
                 uploadConfirm.classList.add("hidden");
+                imageUploadConfirm.classList.add("hidden");
                 statusMessage.textContent = "";
             }});
         </script>
@@ -699,6 +901,7 @@ async def build_pcr(
     client_name: str = Form(...),
     sales_rep: str = Form(...),
     excel_file: UploadFile = File(...),
+    board_images: list[UploadFile] = File(default=[]),
 ):
     client_name = client_name.strip()
     sales_rep = sales_rep.strip()
@@ -716,11 +919,14 @@ async def build_pcr(
         file_bytes = await excel_file.read()
         month_year = extract_month_year_from_excel(file_bytes)
         board_rows = extract_board_rows(file_bytes)
+        uploaded_images = await read_uploaded_images(board_images)
+
         pptx_stream = build_pcr_pptx(
             client_name=client_name,
             month_year=month_year,
             sales_rep=sales_rep,
             board_rows=board_rows,
+            uploaded_images=uploaded_images,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
