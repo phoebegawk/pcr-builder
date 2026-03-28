@@ -321,8 +321,8 @@ async def home():
         </div>
 
         <div class="page-subtext">
-            <div class="page-subtext-primary">Build your PCR cover page and contact page from one client name, one sales rep, and one PCR Numbers file.</div>
-            <div class="page-subtext-secondary">Month + year will be pulled automatically from the date under the ENDED heading in Excel.</div>
+            <div class="page-subtext-primary">Build your PCR using the PCR Numbers Excel file.</div>
+            <div class="page-subtext-secondary">Ready to send straight to the client once downloaded!</div>
         </div>
 
         <form id="pcrForm" class="spec-section">
@@ -338,7 +338,7 @@ async def home():
                         autocomplete="off"
                         required
                     />
-                    <div class="field-note">Type the client name exactly as you want it to appear on the PPTX cover.</div>
+                    <div class="field-note">Provide the Client Name above.</div>
                 </div>
 
                 <div style="width:100%;">
@@ -347,7 +347,7 @@ async def home():
                         <option value="" selected disabled>Select Sales Rep</option>
                         {options_html}
                     </select>
-                    <div class="field-note">Choose the rep whose contact details should appear on the last page.</div>
+                    <div class="field-note">Select the Sales Representative above.</div>
                 </div>
 
                 <div style="width:100%;">
@@ -493,7 +493,7 @@ async def home():
                     anchor.remove();
                     window.URL.revokeObjectURL(url);
 
-                    statusMessage.textContent = "Done. Your PCR PPTX has been downloaded.";
+                    statusMessage.textContent = "Done. Your PCR has been downloaded.";
                 }} catch (error) {{
                     statusMessage.textContent = error.message || "Failed to build PCR.";
                 }} finally {{
