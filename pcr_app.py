@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from PIL import Image, UnidentifiedImageError
+from pypdf import PdfReader
 import uvicorn
 
 from rep_data import REP_DATA, DROPDOWN_REPS
@@ -208,6 +209,50 @@ def _parse_date_string(value: str):
     return None
 
 
+def extract_ado_contract_fields(pdf_bytes: bytes) -> dict:
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+        text_parts = []
+        for page in reader.pages:
+            page_text = page.extract_text() or ""
+            text_parts.append(page_text)
+        full_text = "\n".join(text_parts)
+    except Exception as exc:
+        raise ValueError("Couldn't read the uploaded ADO PDF.") from exc
+
+    if not full_text.strip():
+        raise ValueError("The uploaded ADO PDF did not contain extractable text.")
+
+    def extract_field(label: str) -> str:
+        pattern = rf"{re.escape(label)}\s*:\s*(.+)"
+        match = re.search(pattern, full_text, re.IGNORECASE)
+        if not match:
+            return ""
+        return normalize_text(match.group(1))
+
+    client_name = extract_field("Advertiser Name")
+    sales_rep = extract_field("Account Manager")
+    contract_number = extract_field("Contract Number")
+
+    return {
+        "client_name": client_name,
+        "sales_rep": sales_rep,
+        "contract_number": contract_number,
+    }
+
+
+def choose_contract_value(manual_value: str, ado_value: str, label: str) -> str:
+    manual_value = normalize_text(manual_value or "")
+    ado_value = normalize_text(ado_value or "")
+
+    if manual_value:
+        return manual_value
+    if ado_value:
+        return ado_value
+
+    raise ValueError(f"{label} could not be found. Upload an ADO or enter it manually.")
+
+
 def replace_text_on_slide(slide, replacements: dict):
     normalized_replacements = {
         normalize_text(key): value for key, value in replacements.items()
@@ -279,7 +324,6 @@ def find_board_placeholder_picture(slide, slide_width, slide_height):
         return None
 
     slide_area = slide_width * slide_height
-
     filtered = [
         pic for pic in pictures
         if (pic.width * pic.height) < (slide_area * 0.80)
@@ -383,6 +427,7 @@ def find_matching_image_bytes(site_name: str, uploaded_images: list[dict]):
 def build_pcr_pptx(
     client_name: str,
     month_year: str,
+    contract_number: str,
     sales_rep: str,
     board_rows: list,
     uploaded_images: list[dict],
@@ -411,6 +456,7 @@ def build_pcr_pptx(
         {
             "Client Name": client_name,
             "Month Year": month_year,
+            "Contract Number": contract_number,
         },
     )
 
@@ -513,6 +559,24 @@ async def home():
             .section-block-spaced {{
                 width: 100%;
                 margin-top: 12px;
+            }}
+
+            .manual-section {{
+                display: none;
+                margin-top: 14px;
+                padding-top: 10px;
+                border-top: 2px dashed rgba(84, 45, 84, 0.25);
+            }}
+
+            .manual-section.visible {{
+                display: block;
+            }}
+
+            .secondary-button {{
+                background: #FFFFFF;
+                color: #542D54;
+                border: 3px solid #D7DF23;
+                min-width: 220px;
             }}
 
             .gawk-button {{
@@ -626,47 +690,79 @@ async def home():
 
         <div class="page-subtext">
             <div class="page-subtext-primary">Build your PCR using the PCR Numbers Excel file.</div>
-            <div class="page-subtext-secondary">Ready to send straight to the client once downloaded!</div>
+            <div class="page-subtext-secondary">Upload an ADO first, or use manual contract information entry.</div>
         </div>
 
         <form id="pcrForm" class="spec-section">
             <div class="section-inner">
                 <div class="section-block">
-                    <div class="section-label">Client Name</div>
-                    <input
-                        type="text"
-                        id="clientName"
-                        name="client_name"
-                        class="client-name-input"
-                        placeholder=""
-                        autocomplete="off"
-                        required
-                    />
-                    <div class="field-note">Provide the Client Name above.</div>
+                    <div class="section-label">Upload ADO PDF</div>
+                    <div class="drop-area" id="adoDropArea">
+                        <p>Drag & drop ADO PDF here!</p>
+                        <button type="button" class="gawk-button browse-btn" id="adoBrowseBtn">Browse File</button>
+                        <input
+                            type="file"
+                            id="adoFile"
+                            class="file-input"
+                            accept=".pdf"
+                        />
+                    </div>
+                    <div class="field-note">Used to extract Client Name, Sales Representative, and Contract Number.</div>
                 </div>
 
-                <div class="section-block">
-                    <div class="section-label">Sales Representative</div>
-                    <input
-                        type="text"
-                        id="salesRep"
-                        name="sales_rep"
-                        class="dropdown"
-                        list="salesRepOptions"
-                        placeholder=""
-                        autocomplete="off"
-                        required
-                    />
-                    <datalist id="salesRepOptions">
-                        {options_html}
-                    </datalist>
-                    <div class="field-note">Select the Sales Representative above.</div>
+                <div class="actions-row" style="margin-top: 16px;">
+                    <button type="button" id="manualToggleBtn" class="gawk-button secondary-button">Manual Contract Information Entry</button>
+                </div>
+
+                <div id="manualSection" class="manual-section">
+                    <div class="section-block">
+                        <div class="section-label">Client Name</div>
+                        <input
+                            type="text"
+                            id="clientName"
+                            name="client_name"
+                            class="client-name-input"
+                            placeholder=""
+                            autocomplete="off"
+                        />
+                        <div class="field-note">Manual override for Client Name.</div>
+                    </div>
+
+                    <div class="section-block-spaced">
+                        <div class="section-label">Sales Representative</div>
+                        <input
+                            type="text"
+                            id="salesRep"
+                            name="sales_rep"
+                            class="dropdown"
+                            list="salesRepOptions"
+                            placeholder=""
+                            autocomplete="off"
+                        />
+                        <datalist id="salesRepOptions">
+                            {options_html}
+                        </datalist>
+                        <div class="field-note">Manual override for Sales Representative.</div>
+                    </div>
+
+                    <div class="section-block-spaced">
+                        <div class="section-label">Contract Number</div>
+                        <input
+                            type="text"
+                            id="contractNumber"
+                            name="contract_number"
+                            class="client-name-input"
+                            placeholder=""
+                            autocomplete="off"
+                        />
+                        <div class="field-note">Manual override for Contract Number.</div>
+                    </div>
                 </div>
 
                 <div class="section-block-spaced">
                     <div class="section-label">Upload PCR Numbers File</div>
                     <div class="drop-area" id="dropArea">
-                        <p>Drag & drop here!</p>
+                        <p>Drag & drop Excel file here!</p>
                         <button type="button" class="gawk-button browse-btn" id="browseBtn">Browse File</button>
                         <input
                             type="file"
@@ -679,9 +775,9 @@ async def home():
                 </div>
 
                 <div class="section-block-spaced">
-                    <div class="section-label">Upload Board Images</div>
+                    <div class="section-label">Upload PoP's</div>
                     <div class="drop-area" id="imageDropArea">
-                        <p>Drag & drop here!</p>
+                        <p>Drag & drop JPG and PNG here!</p>
                         <button type="button" class="gawk-button browse-btn" id="imageBrowseBtn">Browse Files</button>
                         <input
                             type="file"
@@ -691,7 +787,10 @@ async def home():
                             multiple
                         />
                     </div>
-                    <div class="field-note">Upload JPG, JPEG or PNG images. Each filename should include the site name it belongs to.</div>
+                </div>
+
+                <div class="upload-confirm hidden" id="adoUploadConfirm">
+                    <div class="upload-confirm-text" id="adoUploadConfirmText">ADO ready.</div>
                 </div>
 
                 <div class="upload-confirm hidden" id="uploadConfirm">
@@ -714,8 +813,19 @@ async def home():
 
         <script>
             const form = document.getElementById("pcrForm");
+            const manualSection = document.getElementById("manualSection");
+            const manualToggleBtn = document.getElementById("manualToggleBtn");
+
+            const adoFileInput = document.getElementById("adoFile");
+            const adoBrowseBtn = document.getElementById("adoBrowseBtn");
+            const adoDropArea = document.getElementById("adoDropArea");
+            const adoUploadConfirm = document.getElementById("adoUploadConfirm");
+            const adoUploadConfirmText = document.getElementById("adoUploadConfirmText");
+
             const clientNameInput = document.getElementById("clientName");
             const salesRepSelect = document.getElementById("salesRep");
+            const contractNumberInput = document.getElementById("contractNumber");
+
             const excelFileInput = document.getElementById("excelFile");
             const imageFilesInput = document.getElementById("imageFiles");
             const browseBtn = document.getElementById("browseBtn");
@@ -730,8 +840,17 @@ async def home():
             const imageUploadConfirmText = document.getElementById("imageUploadConfirmText");
             const statusMessage = document.getElementById("statusMessage");
 
+            manualToggleBtn.addEventListener("click", () => {{
+                manualSection.classList.toggle("visible");
+            }});
+
+            adoBrowseBtn.addEventListener("click", () => adoFileInput.click());
             browseBtn.addEventListener("click", () => excelFileInput.click());
             imageBrowseBtn.addEventListener("click", () => imageFilesInput.click());
+
+            adoFileInput.addEventListener("change", () => {{
+                updateSelectedAdoFile();
+            }});
 
             excelFileInput.addEventListener("change", () => {{
                 updateSelectedExcelFile();
@@ -742,31 +861,33 @@ async def home():
             }});
 
             ["dragenter", "dragover"].forEach(eventName => {{
-                dropArea.addEventListener(eventName, (e) => {{
-                    e.preventDefault();
-                    e.stopPropagation();
-                    dropArea.classList.add("drag-over");
-                }});
-
-                imageDropArea.addEventListener(eventName, (e) => {{
-                    e.preventDefault();
-                    e.stopPropagation();
-                    imageDropArea.classList.add("drag-over");
+                [adoDropArea, dropArea, imageDropArea].forEach(area => {{
+                    area.addEventListener(eventName, (e) => {{
+                        e.preventDefault();
+                        e.stopPropagation();
+                        area.classList.add("drag-over");
+                    }});
                 }});
             }});
 
             ["dragleave", "drop"].forEach(eventName => {{
-                dropArea.addEventListener(eventName, (e) => {{
-                    e.preventDefault();
-                    e.stopPropagation();
-                    dropArea.classList.remove("drag-over");
+                [adoDropArea, dropArea, imageDropArea].forEach(area => {{
+                    area.addEventListener(eventName, (e) => {{
+                        e.preventDefault();
+                        e.stopPropagation();
+                        area.classList.remove("drag-over");
+                    }});
                 }});
+            }});
 
-                imageDropArea.addEventListener(eventName, (e) => {{
-                    e.preventDefault();
-                    e.stopPropagation();
-                    imageDropArea.classList.remove("drag-over");
-                }});
+            adoDropArea.addEventListener("drop", (e) => {{
+                const files = e.dataTransfer.files;
+                if (!files || !files.length) return;
+
+                const dt = new DataTransfer();
+                dt.items.add(files[0]);
+                adoFileInput.files = dt.files;
+                updateSelectedAdoFile();
             }});
 
             dropArea.addEventListener("drop", (e) => {{
@@ -791,6 +912,16 @@ async def home():
                 updateSelectedImageFiles();
             }});
 
+            function updateSelectedAdoFile() {{
+                if (adoFileInput.files && adoFileInput.files.length > 0) {{
+                    adoUploadConfirm.classList.remove("hidden");
+                    adoUploadConfirmText.textContent = `ADO ready: ${{adoFileInput.files[0].name}}`;
+                    statusMessage.textContent = "";
+                }} else {{
+                    adoUploadConfirm.classList.add("hidden");
+                }}
+            }}
+
             function updateSelectedExcelFile() {{
                 if (excelFileInput.files && excelFileInput.files.length > 0) {{
                     uploadConfirm.classList.remove("hidden");
@@ -814,22 +945,17 @@ async def home():
             buildBtn.addEventListener("click", async () => {{
                 const clientName = clientNameInput.value.trim();
                 const salesRep = salesRepSelect.value.trim();
+                const contractNumber = contractNumberInput.value.trim();
                 const excelFile = excelFileInput.files[0];
-
-                if (!clientName) {{
-                    statusMessage.textContent = "Please enter a client name.";
-                    clientNameInput.focus();
-                    return;
-                }}
-
-                if (!salesRep) {{
-                    statusMessage.textContent = "Please select a sales rep.";
-                    salesRepSelect.focus();
-                    return;
-                }}
+                const adoFile = adoFileInput.files[0];
 
                 if (!excelFile) {{
                     statusMessage.textContent = "Please upload a PCR Numbers Excel file.";
+                    return;
+                }}
+
+                if (!adoFile && !clientName && !salesRep && !contractNumber) {{
+                    statusMessage.textContent = "Upload an ADO PDF or use manual contract information entry.";
                     return;
                 }}
 
@@ -839,7 +965,12 @@ async def home():
                 const formData = new FormData();
                 formData.append("client_name", clientName);
                 formData.append("sales_rep", salesRep);
+                formData.append("contract_number", contractNumber);
                 formData.append("excel_file", excelFile);
+
+                if (adoFile) {{
+                    formData.append("ado_file", adoFile);
+                }}
 
                 for (let i = 0; i < imageFilesInput.files.length; i++) {{
                     formData.append("board_images", imageFilesInput.files[i]);
@@ -884,8 +1015,10 @@ async def home():
 
             resetBtn.addEventListener("click", () => {{
                 form.reset();
+                adoFileInput.value = "";
                 excelFileInput.value = "";
                 imageFilesInput.value = "";
+                adoUploadConfirm.classList.add("hidden");
                 uploadConfirm.classList.add("hidden");
                 imageUploadConfirm.classList.add("hidden");
                 statusMessage.textContent = "";
@@ -898,40 +1031,55 @@ async def home():
 
 @app.post("/build")
 async def build_pcr(
-    client_name: str = Form(...),
-    sales_rep: str = Form(...),
+    client_name: str = Form(""),
+    sales_rep: str = Form(""),
+    contract_number: str = Form(""),
     excel_file: UploadFile = File(...),
+    ado_file: UploadFile | None = File(default=None),
     board_images: list[UploadFile] = File(default=[]),
 ):
     client_name = client_name.strip()
     sales_rep = sales_rep.strip()
+    contract_number = contract_number.strip()
 
-    if not client_name:
-        raise HTTPException(status_code=400, detail="Client name is required.")
-
-    if not sales_rep or sales_rep not in REP_DATA:
-        raise HTTPException(status_code=400, detail="Please select a valid sales rep.")
+    if ado_file and ado_file.filename and not ado_file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a valid ADO PDF.")
 
     if not excel_file.filename.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
         raise HTTPException(status_code=400, detail="Please upload a valid Excel file.")
 
     try:
+        ado_values = {
+            "client_name": "",
+            "sales_rep": "",
+            "contract_number": "",
+        }
+
+        if ado_file and ado_file.filename:
+            ado_bytes = await ado_file.read()
+            ado_values = extract_ado_contract_fields(ado_bytes)
+
+        final_client_name = choose_contract_value(client_name, ado_values["client_name"], "Client Name")
+        final_sales_rep = choose_contract_value(sales_rep, ado_values["sales_rep"], "Sales Representative")
+        final_contract_number = choose_contract_value(contract_number, ado_values["contract_number"], "Contract Number")
+
         file_bytes = await excel_file.read()
         month_year = extract_month_year_from_excel(file_bytes)
         board_rows = extract_board_rows(file_bytes)
         uploaded_images = await read_uploaded_images(board_images)
 
         pptx_stream = build_pcr_pptx(
-            client_name=client_name,
+            client_name=final_client_name,
             month_year=month_year,
-            sales_rep=sales_rep,
+            contract_number=final_contract_number,
+            sales_rep=final_sales_rep,
             board_rows=board_rows,
             uploaded_images=uploaded_images,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    safe_client = clean_filename_part(client_name).replace(" ", "_")
+    safe_client = clean_filename_part(final_client_name).replace(" ", "_")
     safe_month = month_year.replace(" ", "_")
     output_filename = f"PCR_Report_{safe_client}_{safe_month}.pptx"
 
