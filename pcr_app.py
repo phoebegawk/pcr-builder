@@ -248,7 +248,12 @@ def duplicate_slide(prs, slide_index: int):
     for rel in source.part.rels.values():
         if "notesSlide" in rel.reltype:
             continue
-        new_slide.part.rels.add_relationship(rel.reltype, rel._target, rel.rId)
+        new_slide.part.rels._add_relationship(
+            rel.reltype,
+            rel._target,
+            rel.rId,
+            is_external=rel.is_external,
+        )
 
     return new_slide
 
