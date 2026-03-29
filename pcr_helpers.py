@@ -49,6 +49,12 @@ def _parse_date_string(value: str):
     return None
 
 
+def to_title_case(value: str) -> str:
+    if not value:
+        return ""
+    return " ".join(word.capitalize() for word in str(value).split())
+
+
 def format_month_year(value) -> str:
     if isinstance(value, datetime):
         return value.strftime("%B %Y")
@@ -101,6 +107,25 @@ def get_site_top_line(value) -> str:
     if not text:
         return ""
     return text.splitlines()[0].strip()
+
+
+def extract_site_code(value) -> str:
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) >= 2:
+        return lines[1]
+
+    match = re.search(r"\b\d{4,}(?:-[A-Z])?(?:-[A-Z])?\b", text.upper())
+    if match:
+        return match.group(0)
+
+    return ""
 
 
 def extract_month_year_from_excel(file_bytes: bytes) -> str:
@@ -175,13 +200,22 @@ def extract_board_rows(file_bytes: bytes):
                 continue
 
             site_name = get_site_top_line(site_value)
+            site_code = extract_site_code(site_value)
+
             if not site_name:
                 current_row += 1
                 continue
 
+            site_name = to_title_case(site_name)
+
+            site_name_and_code = site_name
+            if site_code:
+                site_name_and_code = f"{site_name} - {site_code}"
+
             rows.append(
                 {
-                    "Site Name and Code": site_name,
+                    "Site Name and Code": site_name_and_code,
+                    "Site Code": site_code,
                     "Start Date": format_day_month_year(started_value),
                     "End Date": format_day_month_year(ended_value),
                     "Run Time": f"{str(days_value).strip()} Days",
@@ -315,10 +349,12 @@ def move_slide_to_end(prs, slide_index: int):
     slide_id_list.remove(slide)
     slide_id_list.append(slide)
 
+
 def remove_slide(prs, slide_index: int):
     slide_id_list = prs.slides._sldIdLst
     slides = list(slide_id_list)
     slide_id_list.remove(slides[slide_index])
+
 
 def find_board_placeholder_picture(slide, slide_width, slide_height):
     pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
@@ -414,13 +450,13 @@ async def read_uploaded_images(board_images):
     return uploaded
 
 
-def find_matching_image_bytes(site_name: str, uploaded_images: list[dict]):
-    site_key = normalize_match_key(site_name)
-    if not site_key:
+def find_matching_image_bytes(site_code: str, uploaded_images: list[dict]):
+    code_key = normalize_match_key(site_code)
+    if not code_key:
         return None
 
     for image in uploaded_images:
-        if site_key in image["match_key"]:
+        if code_key in image["match_key"]:
             return image["bytes"]
 
     return None
@@ -470,7 +506,7 @@ def build_pcr_pptx(
         replace_text_on_slide(new_board_slide, row_data)
 
         matched_image = find_matching_image_bytes(
-            row_data["Site Name and Code"],
+            row_data.get("Site Code", ""),
             uploaded_images,
         )
         if matched_image:
