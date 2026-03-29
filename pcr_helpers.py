@@ -315,6 +315,10 @@ def move_slide_to_end(prs, slide_index: int):
     slide_id_list.remove(slide)
     slide_id_list.append(slide)
 
+def remove_slide(prs, slide_index: int):
+    slide_id_list = prs.slides._sldIdLst
+    slides = list(slide_id_list)
+    slide_id_list.remove(slides[slide_index])
 
 def find_board_placeholder_picture(slide, slide_width, slide_height):
     pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
@@ -445,10 +449,11 @@ def build_pcr_pptx(
     if len(prs.slides) < 3:
         raise ValueError("The PPTX template must contain at least 3 slides: cover, board page, contact page.")
 
-    cover_slide = prs.slides[0]
+    cover_slide_index = 0
     board_template_index = 1
     contact_slide_index = 2
 
+    cover_slide = prs.slides[cover_slide_index]
     replace_text_on_slide(
         cover_slide,
         {
@@ -458,32 +463,29 @@ def build_pcr_pptx(
         },
     )
 
-    first_board_slide = prs.slides[board_template_index]
-    replace_text_on_slide(first_board_slide, board_rows[0])
+    # Keep the original board template untouched.
+    # Create a fresh duplicate for EVERY board row.
+    for row_data in board_rows:
+        new_board_slide = duplicate_slide_safe(prs, board_template_index)
+        replace_text_on_slide(new_board_slide, row_data)
 
-    matched_image = find_matching_image_bytes(board_rows[0]["Site Name and Code"], uploaded_images)
-    if matched_image:
-        replace_board_placeholder_image(
-            first_board_slide,
-            prs.slide_width,
-            prs.slide_height,
-            matched_image,
+        matched_image = find_matching_image_bytes(
+            row_data["Site Name and Code"],
+            uploaded_images,
         )
-
-    for row_data in board_rows[1:]:
-        duplicated_board_slide = duplicate_slide_safe(prs, board_template_index)
-        replace_text_on_slide(duplicated_board_slide, row_data)
-
-        matched_image = find_matching_image_bytes(row_data["Site Name and Code"], uploaded_images)
         if matched_image:
             replace_board_placeholder_image(
-                duplicated_board_slide,
+                new_board_slide,
                 prs.slide_width,
                 prs.slide_height,
                 matched_image,
             )
 
-    contact_slide = prs.slides[contact_slide_index]
+    # Remove the original untouched board template slide
+    remove_slide(prs, board_template_index)
+
+    # After removing board template, contact slide shifts from index 2 to index 1
+    contact_slide = prs.slides[1]
     rep_contact_line = f'{rep["phone"]} | {rep["email"]}'
 
     replace_text_on_slide(
@@ -496,7 +498,7 @@ def build_pcr_pptx(
         },
     )
 
-    move_slide_to_end(prs, contact_slide_index)
+    move_slide_to_end(prs, 1)
 
     output = BytesIO()
     prs.save(output)
