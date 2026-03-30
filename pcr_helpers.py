@@ -48,12 +48,44 @@ def _parse_date_string(value: str):
         "%d/%m/%Y",
         "%d-%m-%Y",
         "%Y-%m-%d",
+        "%d %B %y",
+        "%d %b %y",
+        "%d/%m/%y",
+        "%d-%m-%y",
     ]
     for fmt in formats:
         try:
             return datetime.strptime(value, fmt)
         except ValueError:
             pass
+    return None
+
+
+def extract_date_from_end_text(value) -> datetime | None:
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    match = re.search(
+        r"END\s*:\s*([0-9]{1,2}\s+[A-Za-z]+\s+[0-9]{2,4})",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        parsed = _parse_date_string(match.group(1).strip())
+        if parsed:
+            return parsed
+
+    parsed = _parse_date_string(text)
+    if parsed:
+        return parsed
+
     return None
 
 
@@ -69,7 +101,7 @@ def format_month_year(value) -> str:
         if parsed:
             return parsed.strftime("%B %Y")
 
-    raise ValueError("Couldn't format Month Year from the Excel ENDED date.")
+    raise ValueError("Couldn't format Month Year from the Excel End date.")
 
 
 def format_day_month_year(value) -> str:
@@ -151,23 +183,13 @@ def extract_month_year_from_excel(file_bytes: bytes) -> str:
     workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
 
     for sheet in workbook.worksheets:
-        ended_cell = None
-
         for row in sheet.iter_rows():
             for cell in row:
-                if normalize_excel_label(cell.value) == "ENDED":
-                    ended_cell = cell
-                    break
-            if ended_cell:
-                break
+                parsed = extract_date_from_end_text(cell.value)
+                if parsed:
+                    return parsed.strftime("%B %Y")
 
-        if not ended_cell:
-            continue
-
-        date_cell = sheet.cell(row=ended_cell.row + 1, column=ended_cell.column)
-        return format_month_year(date_cell.value)
-
-    raise ValueError("Couldn't find an 'ENDED' header in the uploaded Excel file.")
+    raise ValueError("Couldn't find an End date in the uploaded Excel file.")
 
 
 def extract_campaign_insights(file_bytes: bytes) -> dict:
@@ -177,7 +199,7 @@ def extract_campaign_insights(file_bytes: bytes) -> dict:
         "ELAPSED DAYS:": "Length",
         "CAMPAIGN TOTAL:": "Price",
         "TRAFFIC (CARS):": "Cars",
-        "IMPRESSIONS:": "Impressions",
+        "IMPRESSIONS:": "Total Impressions",
     }
 
     for sheet in workbook.worksheets:
@@ -197,7 +219,7 @@ def extract_campaign_insights(file_bytes: bytes) -> dict:
                 "Length": format_days(found["Length"]),
                 "Price": format_currency(found["Price"]),
                 "Cars": format_impressions(found["Cars"]),
-                "Impressions": format_impressions(found["Impressions"]),
+                "Total Impressions": format_impressions(found["Total Impressions"]),
             }
 
     raise ValueError(
@@ -571,7 +593,7 @@ def build_pcr_pptx(
             "Length": campaign_insights["Length"],
             "Price": campaign_insights["Price"],
             "Cars": campaign_insights["Cars"],
-            "Impressions": campaign_insights["Impressions"],
+            "Total Impressions": campaign_insights["Total Impressions"],
         },
     )
 
