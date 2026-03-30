@@ -12,6 +12,7 @@ from pcr_helpers import (
     extract_ado_contract_fields,
     choose_contract_value,
     extract_month_year_from_excel,
+    extract_campaign_insights,
     extract_board_rows,
     read_uploaded_images,
     build_pcr_pptx,
@@ -239,6 +240,7 @@ async def build_pcr(
 
         file_bytes = await excel_file.read()
         month_year = extract_month_year_from_excel(file_bytes)
+        campaign_insights = extract_campaign_insights(file_bytes)
         board_rows = extract_board_rows(file_bytes)
         uploaded_images = await read_uploaded_images(board_images)
 
@@ -247,6 +249,7 @@ async def build_pcr(
             month_year=month_year,
             contract_number=final_contract_number,
             sales_rep=final_sales_rep,
+            campaign_insights=campaign_insights,
             board_rows=board_rows,
             uploaded_images=uploaded_images,
         )
