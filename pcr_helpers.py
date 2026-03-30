@@ -49,12 +49,6 @@ def _parse_date_string(value: str):
     return None
 
 
-def to_title_case(value: str) -> str:
-    if not value:
-        return ""
-    return " ".join(word.capitalize() for word in str(value).split())
-
-
 def format_month_year(value) -> str:
     if isinstance(value, datetime):
         return value.strftime("%B %Y")
@@ -109,7 +103,7 @@ def get_site_top_line(value) -> str:
     return text.splitlines()[0].strip()
 
 
-def extract_site_code(value) -> str:
+def extract_site_code_from_left_column(value) -> str:
     if value is None:
         return ""
 
@@ -117,15 +111,7 @@ def extract_site_code(value) -> str:
     if not text:
         return ""
 
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if len(lines) >= 2:
-        return lines[1]
-
-    match = re.search(r"\b\d{4,}(?:-[A-Z])?(?:-[A-Z])?\b", text.upper())
-    if match:
-        return match.group(0)
-
-    return ""
+    return text.upper()
 
 
 def extract_month_year_from_excel(file_bytes: bytes) -> str:
@@ -186,27 +172,36 @@ def extract_board_rows(file_bytes: bytes):
         current_row = header_row_idx + 1
 
         while current_row <= sheet.max_row:
-            site_value = sheet.cell(current_row, header_map["SITE"]).value
+            site_name_value = sheet.cell(current_row, header_map["SITE"]).value
             started_value = sheet.cell(current_row, header_map["STARTED"]).value
             ended_value = sheet.cell(current_row, header_map["ENDED"]).value
             days_value = sheet.cell(current_row, header_map["DAYS"]).value
             impressions_value = sheet.cell(current_row, header_map["IMPRESSIONS"]).value
 
+            site_code_value = None
+            if header_map["SITE"] > 1:
+                site_code_value = sheet.cell(current_row, header_map["SITE"] - 1).value
+
             if all(
                 value is None or str(value).strip() == ""
-                for value in [site_value, started_value, ended_value, days_value, impressions_value]
+                for value in [
+                    site_name_value,
+                    started_value,
+                    ended_value,
+                    days_value,
+                    impressions_value,
+                    site_code_value,
+                ]
             ):
                 current_row += 1
                 continue
 
-            site_name = get_site_top_line(site_value)
-            site_code = extract_site_code(site_value)
+            site_name = get_site_top_line(site_name_value)
+            site_code = extract_site_code_from_left_column(site_code_value)
 
             if not site_name:
                 current_row += 1
                 continue
-
-            site_name = to_title_case(site_name)
 
             site_name_and_code = site_name
             if site_code:
@@ -487,7 +482,6 @@ def build_pcr_pptx(
 
     cover_slide_index = 0
     board_template_index = 1
-    contact_slide_index = 2
 
     cover_slide = prs.slides[cover_slide_index]
     replace_text_on_slide(
@@ -499,8 +493,6 @@ def build_pcr_pptx(
         },
     )
 
-    # Keep the original board template untouched.
-    # Create a fresh duplicate for EVERY board row.
     for row_data in board_rows:
         new_board_slide = duplicate_slide_safe(prs, board_template_index)
         replace_text_on_slide(new_board_slide, row_data)
@@ -517,10 +509,8 @@ def build_pcr_pptx(
                 matched_image,
             )
 
-    # Remove the original untouched board template slide
     remove_slide(prs, board_template_index)
 
-    # After removing board template, contact slide shifts from index 2 to index 1
     contact_slide = prs.slides[1]
     rep_contact_line = f'{rep["phone"]} | {rep["email"]}'
 
