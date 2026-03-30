@@ -33,6 +33,14 @@ def normalize_match_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value).lower())
 
 
+def normalize_excel_label(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).replace("\n", " ")
+    text = re.sub(r"\s+", " ", text).strip().upper()
+    return text
+
+
 def _parse_date_string(value: str):
     formats = [
         "%d %B %Y",
@@ -112,6 +120,9 @@ def format_days(value) -> str:
     if value is None or str(value).strip() == "":
         return ""
 
+    if isinstance(value, (int, float)):
+        return f"{int(round(value))} Days"
+
     raw = str(value).strip()
     return f"{raw} Days"
 
@@ -144,7 +155,7 @@ def extract_month_year_from_excel(file_bytes: bytes) -> str:
 
         for row in sheet.iter_rows():
             for cell in row:
-                if isinstance(cell.value, str) and cell.value.strip().upper() == "ENDED":
+                if normalize_excel_label(cell.value) == "ENDED":
                     ended_cell = cell
                     break
             if ended_cell:
@@ -163,10 +174,10 @@ def extract_campaign_insights(file_bytes: bytes) -> dict:
     workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
 
     required_labels = {
-        "ELAPSED DAYS": "Length",
-        "CAMPAIGN TOTAL": "Price",
-        "TRAFFIC (CARS)": "Cars",
-        "IMPRESSIONS": "Impressions",
+        "ELAPSED DAYS:": "Length",
+        "CAMPAIGN TOTAL:": "Price",
+        "TRAFFIC (CARS):": "Cars",
+        "IMPRESSIONS:": "Impressions",
     }
 
     for sheet in workbook.worksheets:
@@ -174,10 +185,7 @@ def extract_campaign_insights(file_bytes: bytes) -> dict:
 
         for row in sheet.iter_rows():
             for cell in row:
-                if not isinstance(cell.value, str):
-                    continue
-
-                label = cell.value.strip().upper()
+                label = normalize_excel_label(cell.value)
                 if label not in required_labels:
                     continue
 
@@ -215,10 +223,9 @@ def extract_board_rows(file_bytes: bytes):
         for row in sheet.iter_rows():
             current_map = {}
             for cell in row:
-                if isinstance(cell.value, str):
-                    header_text = cell.value.strip().upper()
-                    if header_text in required_headers:
-                        current_map[header_text] = cell.column
+                header_text = normalize_excel_label(cell.value)
+                if header_text in required_headers:
+                    current_map[header_text] = cell.column
 
             if required_headers.issubset(current_map.keys()):
                 header_row_idx = row[0].row
