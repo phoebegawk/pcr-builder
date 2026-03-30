@@ -94,6 +94,28 @@ def format_impressions(value) -> str:
         return str(value).strip()
 
 
+def format_currency(value) -> str:
+    if value is None or str(value).strip() == "":
+        return ""
+
+    if isinstance(value, (int, float)):
+        return f"${value:,.2f}"
+
+    raw = str(value).strip().replace("$", "").replace(",", "")
+    try:
+        return f"${float(raw):,.2f}"
+    except ValueError:
+        return str(value).strip()
+
+
+def format_days(value) -> str:
+    if value is None or str(value).strip() == "":
+        return ""
+
+    raw = str(value).strip()
+    return f"{raw} Days"
+
+
 def get_site_top_line(value) -> str:
     if value is None:
         return ""
@@ -135,6 +157,44 @@ def extract_month_year_from_excel(file_bytes: bytes) -> str:
         return format_month_year(date_cell.value)
 
     raise ValueError("Couldn't find an 'ENDED' header in the uploaded Excel file.")
+
+
+def extract_campaign_insights(file_bytes: bytes) -> dict:
+    workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
+
+    required_labels = {
+        "ELAPSED DAYS": "Length",
+        "CAMPAIGN TOTAL": "Price",
+        "TRAFFIC (CARS)": "Cars",
+        "IMPRESSIONS": "Impressions",
+    }
+
+    for sheet in workbook.worksheets:
+        found = {}
+
+        for row in sheet.iter_rows():
+            for cell in row:
+                if not isinstance(cell.value, str):
+                    continue
+
+                label = cell.value.strip().upper()
+                if label not in required_labels:
+                    continue
+
+                value_cell = sheet.cell(row=cell.row, column=cell.column + 1)
+                found[required_labels[label]] = value_cell.value
+
+        if len(found) == 4:
+            return {
+                "Length": format_days(found["Length"]),
+                "Price": format_currency(found["Price"]),
+                "Cars": format_impressions(found["Cars"]),
+                "Impressions": format_impressions(found["Impressions"]),
+            }
+
+    raise ValueError(
+        "Couldn't find ELAPSED DAYS / CAMPAIGN TOTAL / TRAFFIC (CARS) / IMPRESSIONS in the uploaded Excel file."
+    )
 
 
 def extract_board_rows(file_bytes: bytes):
@@ -462,6 +522,7 @@ def build_pcr_pptx(
     month_year: str,
     contract_number: str,
     sales_rep: str,
+    campaign_insights: dict,
     board_rows: list,
     uploaded_images: list[dict],
 ) -> BytesIO:
@@ -477,11 +538,14 @@ def build_pcr_pptx(
     rep = REP_DATA[sales_rep]
     prs = Presentation(str(PPTX_TEMPLATE_PATH))
 
-    if len(prs.slides) < 3:
-        raise ValueError("The PPTX template must contain at least 3 slides: cover, board page, contact page.")
+    if len(prs.slides) < 4:
+        raise ValueError(
+            "The PPTX template must contain at least 4 slides: cover, campaign insights, board page, contact page."
+        )
 
     cover_slide_index = 0
-    board_template_index = 1
+    insights_slide_index = 1
+    board_template_index = 2
 
     cover_slide = prs.slides[cover_slide_index]
     replace_text_on_slide(
@@ -490,6 +554,17 @@ def build_pcr_pptx(
             "Client Name": client_name,
             "Month Year": month_year,
             "Contract Number": contract_number,
+        },
+    )
+
+    insights_slide = prs.slides[insights_slide_index]
+    replace_text_on_slide(
+        insights_slide,
+        {
+            "Length": campaign_insights["Length"],
+            "Price": campaign_insights["Price"],
+            "Cars": campaign_insights["Cars"],
+            "Impressions": campaign_insights["Impressions"],
         },
     )
 
@@ -511,7 +586,7 @@ def build_pcr_pptx(
 
     remove_slide(prs, board_template_index)
 
-    contact_slide = prs.slides[1]
+    contact_slide = prs.slides[2]
     rep_contact_line = f'{rep["phone"]} | {rep["email"]}'
 
     replace_text_on_slide(
@@ -524,7 +599,7 @@ def build_pcr_pptx(
         },
     )
 
-    move_slide_to_end(prs, 1)
+    move_slide_to_end(prs, 2)
 
     output = BytesIO()
     prs.save(output)
