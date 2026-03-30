@@ -33,14 +33,6 @@ def normalize_match_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value).lower())
 
 
-def normalize_excel_label(value) -> str:
-    if value is None:
-        return ""
-    text = str(value).replace("\n", " ")
-    text = re.sub(r"\s+", " ", text).strip().upper()
-    return text
-
-
 def _parse_date_string(value: str):
     formats = [
         "%d %B %Y",
@@ -87,21 +79,6 @@ def extract_date_from_end_text(value) -> datetime | None:
         return parsed
 
     return None
-
-
-def format_month_year(value) -> str:
-    if isinstance(value, datetime):
-        return value.strftime("%B %Y")
-
-    if hasattr(value, "strftime"):
-        return value.strftime("%B %Y")
-
-    if isinstance(value, str) and value.strip():
-        parsed = _parse_date_string(value.strip())
-        if parsed:
-            return parsed.strftime("%B %Y")
-
-    raise ValueError("Couldn't format Month Year from the Excel End date.")
 
 
 def format_day_month_year(value) -> str:
@@ -179,141 +156,87 @@ def extract_site_code_from_left_column(value) -> str:
     return text.upper()
 
 
-def extract_month_year_from_excel(file_bytes: bytes) -> str:
+def get_primary_sheet(file_bytes: bytes):
     workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
+    if "PCR" in workbook.sheetnames:
+        return workbook["PCR"]
+    return workbook.worksheets[0]
 
-    for sheet in workbook.worksheets:
-        for row in sheet.iter_rows():
-            for cell in row:
-                parsed = extract_date_from_end_text(cell.value)
-                if parsed:
-                    return parsed.strftime("%B %Y")
 
-    raise ValueError("Couldn't find an End date in the uploaded Excel file.")
+def extract_month_year_from_excel(file_bytes: bytes) -> str:
+    sheet = get_primary_sheet(file_bytes)
+
+    end_value = sheet["M3"].value
+    parsed = extract_date_from_end_text(end_value)
+
+    if not parsed and isinstance(end_value, datetime):
+        parsed = end_value
+
+    if not parsed:
+        raise ValueError("Couldn't read the End date from cell M3.")
+
+    return parsed.strftime("%B %Y")
 
 
 def extract_campaign_insights(file_bytes: bytes) -> dict:
-    workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
+    sheet = get_primary_sheet(file_bytes)
 
-    required_labels = {
-        "ELAPSED DAYS:": "Length",
-        "CAMPAIGN TOTAL:": "Price",
-        "TRAFFIC (CARS):": "Cars",
-        "IMPRESSIONS:": "Total Impressions",
+    return {
+        "Length": format_days(sheet["M6"].value),
+        "Cars": format_impressions(sheet["M7"].value),
+        "Total Impressions": format_impressions(sheet["M8"].value),
+        "Price": format_currency(sheet["M14"].value),
     }
-
-    for sheet in workbook.worksheets:
-        found = {}
-
-        for row in sheet.iter_rows():
-            for cell in row:
-                label = normalize_excel_label(cell.value)
-                if label not in required_labels:
-                    continue
-
-                value_cell = sheet.cell(row=cell.row, column=cell.column + 1)
-                found[required_labels[label]] = value_cell.value
-
-        if len(found) == 4:
-            return {
-                "Length": format_days(found["Length"]),
-                "Price": format_currency(found["Price"]),
-                "Cars": format_impressions(found["Cars"]),
-                "Total Impressions": format_impressions(found["Total Impressions"]),
-            }
-
-    raise ValueError(
-        "Couldn't find ELAPSED DAYS / CAMPAIGN TOTAL / TRAFFIC (CARS) / IMPRESSIONS in the uploaded Excel file."
-    )
 
 
 def extract_board_rows(file_bytes: bytes):
-    workbook = load_workbook(filename=BytesIO(file_bytes), data_only=True)
+    sheet = get_primary_sheet(file_bytes)
 
-    required_headers = {
-        "SITE",
-        "STARTED",
-        "ENDED",
-        "DAYS",
-        "IMPRESSIONS",
-    }
+    rows = []
+    current_row = 20
 
-    for sheet in workbook.worksheets:
-        header_row_idx = None
-        header_map = {}
+    while current_row <= sheet.max_row:
+        site_code_value = sheet[f"K{current_row}"].value
+        site_name_value = sheet[f"L{current_row}"].value
+        impressions_value = sheet[f"O{current_row}"].value
+        started_value = sheet[f"T{current_row}"].value
+        ended_value = sheet[f"U{current_row}"].value
+        days_value = sheet[f"V{current_row}"].value
 
-        for row in sheet.iter_rows():
-            current_map = {}
-            for cell in row:
-                header_text = normalize_excel_label(cell.value)
-                if header_text in required_headers:
-                    current_map[header_text] = cell.column
+        if (
+            (site_code_value is None or str(site_code_value).strip() == "")
+            and (site_name_value is None or str(site_name_value).strip() == "")
+        ):
+            break
 
-            if required_headers.issubset(current_map.keys()):
-                header_row_idx = row[0].row
-                header_map = current_map
-                break
+        site_name = get_site_top_line(site_name_value)
+        site_code = extract_site_code_from_left_column(site_code_value)
 
-        if not header_row_idx:
+        if not site_name:
+            current_row += 1
             continue
 
-        rows = []
-        current_row = header_row_idx + 1
+        site_name_and_code = site_name
+        if site_code:
+            site_name_and_code = f"{site_name} - {site_code}"
 
-        while current_row <= sheet.max_row:
-            site_name_value = sheet.cell(current_row, header_map["SITE"]).value
-            started_value = sheet.cell(current_row, header_map["STARTED"]).value
-            ended_value = sheet.cell(current_row, header_map["ENDED"]).value
-            days_value = sheet.cell(current_row, header_map["DAYS"]).value
-            impressions_value = sheet.cell(current_row, header_map["IMPRESSIONS"]).value
+        rows.append(
+            {
+                "Site Name and Code": site_name_and_code,
+                "Site Code": site_code,
+                "Start Date": format_day_month_year(started_value),
+                "End Date": format_day_month_year(ended_value),
+                "Run Time": format_days(days_value),
+                "Impressions": format_impressions(impressions_value),
+            }
+        )
 
-            site_code_value = None
-            if header_map["SITE"] > 1:
-                site_code_value = sheet.cell(current_row, header_map["SITE"] - 1).value
+        current_row += 1
 
-            if all(
-                value is None or str(value).strip() == ""
-                for value in [
-                    site_name_value,
-                    started_value,
-                    ended_value,
-                    days_value,
-                    impressions_value,
-                    site_code_value,
-                ]
-            ):
-                current_row += 1
-                continue
+    if rows:
+        return rows
 
-            site_name = get_site_top_line(site_name_value)
-            site_code = extract_site_code_from_left_column(site_code_value)
-
-            if not site_name:
-                current_row += 1
-                continue
-
-            site_name_and_code = site_name
-            if site_code:
-                site_name_and_code = f"{site_name} - {site_code}"
-
-            rows.append(
-                {
-                    "Site Name and Code": site_name_and_code,
-                    "Site Code": site_code,
-                    "Start Date": format_day_month_year(started_value),
-                    "End Date": format_day_month_year(ended_value),
-                    "Run Time": f"{str(days_value).strip()} Days",
-                    "Impressions": format_impressions(impressions_value),
-                }
-            )
-            current_row += 1
-
-        if rows:
-            return rows
-
-    raise ValueError(
-        "Couldn't find a valid SITE / STARTED / ENDED / DAYS / IMPRESSIONS section in the uploaded Excel file."
-    )
+    raise ValueError("No board rows were found in the fixed Excel table starting at row 20.")
 
 
 def extract_ado_contract_fields(pdf_bytes: bytes) -> dict:
