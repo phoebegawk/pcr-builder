@@ -40,7 +40,7 @@ body {
 
 .header-image {
     width: 100%;
-    max-width: 1100px;
+    max-width: 1300px;
     margin-bottom: 30px;
 }
 
@@ -196,11 +196,10 @@ body {
 ----------------------------------- */
 .upload-confirm {
     width: 100%;
-    color: #542D54;
-    font-size: 16px;
-    font-weight: 600;
-    text-align: center;
     margin-top: 10px;
+    padding: 12px 16px;
+    background: #D7DF23;
+    text-align: center;
 }
 
 .upload-confirm.hidden,
@@ -210,6 +209,9 @@ body {
 
 .upload-confirm-text {
     margin-top: 0;
+    color: #542D54;
+    font-size: 16px;
+    font-weight: 700;
 }
 
 /* -----------------------------------
