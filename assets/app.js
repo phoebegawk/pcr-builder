@@ -153,7 +153,7 @@ async function updateSelectedAdoFile() {
 
     if (adoFileInput.files && adoFileInput.files.length > 0) {
         adoUploadConfirm.classList.remove("hidden");
-        adoUploadConfirmText.textContent = `ADO uploaded  ✅  ${adoFileInput.files[0].name}`;
+        adoUploadConfirmText.textContent = `ADO Uploaded  ✅  ${adoFileInput.files[0].name}`;
         if (statusMessage) statusMessage.textContent = "";
 
         const formData = new FormData();
