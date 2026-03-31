@@ -47,8 +47,8 @@ async def home():
         </div>
 
         <div class="page-subtext">
-            <div class="page-subtext-primary">Build your PCR using the PCR Numbers Excel file.</div>
-            <div class="page-subtext-secondary">Upload an ADO first, or use manual contract information entry.</div>
+            <div class="page-subtext-primary">Build your PCR! All you need is the ADO, PCR Numbers and PoP's</div>
+            <div class="page-subtext-secondary">Use manual contract information entry when needed.</div>
         </div>
 
         <form id="pcrForm" class="spec-section">
@@ -137,9 +137,9 @@ async def home():
                 </div>
 
                 <div class="section-block-spaced">
-                    <div class="section-label">Upload PCR Numbers</div>
+                    <div class="section-label">Upload PCR Numbers Excel</div>
                     <div class="drop-area" id="excelDropArea">
-                        <p>Drag & drop Excel file here!</p>
+                        <p>Drag & drop .XLSX file here!</p>
                         <button type="button" class="gawk-button browse-btn" id="excelBrowseBtn">Browse File</button>
                         <input
                             type="file"
