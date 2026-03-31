@@ -25,7 +25,7 @@ html, body {
 
 body {
     display: block;
-    padding: 40px;
+    padding: 16px 40px 40px 40px;
 }
 
 /* -----------------------------------
@@ -198,7 +198,7 @@ body {
     width: 100%;
     margin-top: 10px;
     padding: 12px 16px;
-    background: #E7EC7B;
+    background: #EEF2A7;
     border-radius: 10px;
     text-align: center;
 }
