@@ -164,7 +164,7 @@ body {
 ----------------------------------- */
 .drop-area {
     width: 100%;
-    border: 3px dashed #542D54;
+    border: 2px dashed #542D54;
     border-radius: 10px;
     background: #F7F7F7;
     padding: 24px 12px;
@@ -198,7 +198,7 @@ body {
     width: 100%;
     margin-top: 10px;
     padding: 12px 16px;
-    background: #D7DF23;
+    background: #E7EC7B;
     border-radius: 10px;
     text-align: center;
 }
