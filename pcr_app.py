@@ -47,7 +47,7 @@ async def home():
         </div>
 
         <div class="page-subtext">
-            <div class="page-subtext-primary">Build your PCR! All you need is the ADO, PCR Numbers and PoP's</div>
+            <div class="page-subtext-primary">Build your PCR here! All you need is the ADO, PCR Numbers and PoP's.</div>
             <div class="page-subtext-secondary">Use manual contract information entry when needed.</div>
         </div>
 
