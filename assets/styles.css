@@ -74,7 +74,7 @@ body {
     width: 100%;
     max-width: 1200px;
     background: #FFFFFF;
-    border-radius: 12px;
+    border-radius: 10px;
     border: 3px solid #D7DF23;
     padding: 20px 32px;
     margin: 0 auto 24px auto;
@@ -165,7 +165,7 @@ body {
 .drop-area {
     width: 100%;
     border: 3px dashed #542D54;
-    border-radius: 12px;
+    border-radius: 10px;
     background: #F7F7F7;
     padding: 24px 12px;
     color: #542D54;
@@ -199,6 +199,7 @@ body {
     margin-top: 10px;
     padding: 12px 16px;
     background: #D7DF23;
+    border-radius: 10px;
     text-align: center;
 }
 
@@ -223,7 +224,7 @@ body {
     margin-top: 14px;
     padding: 16px 18px;
     border: 2px solid rgba(215, 223, 35, 0.9);
-    border-radius: 14px;
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.92);
 }
 
