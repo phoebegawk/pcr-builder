@@ -137,9 +137,9 @@ async def home():
                 </div>
 
                 <div class="section-block-spaced">
-                    <div class="section-label">Upload PCR Numbers Excel</div>
+                    <div class="section-label">Upload PCR Numbers</div>
                     <div class="drop-area" id="excelDropArea">
-                        <p>Drag & drop .XLSX file here!</p>
+                        <p>Drag & drop Excel file here!</p>
                         <button type="button" class="gawk-button browse-btn" id="excelBrowseBtn">Browse File</button>
                         <input
                             type="file"
