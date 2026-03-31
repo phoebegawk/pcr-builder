@@ -71,10 +71,6 @@ async def home():
                         />
                     </div>
 
-                    <div class="upload-confirm hidden" id="adoUploadConfirm">
-                        <div class="upload-confirm-text" id="adoUploadConfirmText">ADO ready.</div>
-                    </div>
-
                     <div class="extracted-preview" id="adoPreview">
                         <div class="extracted-preview-title">Extracted Contract Info</div>
                         <div class="extracted-preview-grid">
@@ -91,6 +87,10 @@ async def home():
                                 <span id="adoPreviewContractNumber">—</span>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="upload-confirm hidden" id="adoUploadConfirm">
+                        <div class="upload-confirm-text" id="adoUploadConfirmText">ADO ready.</div>
                     </div>
                 </div>
 
