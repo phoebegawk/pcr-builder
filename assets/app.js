@@ -153,7 +153,7 @@ async function updateSelectedAdoFile() {
 
     if (adoFileInput.files && adoFileInput.files.length > 0) {
         adoUploadConfirm.classList.remove("hidden");
-        adoUploadConfirmText.textContent = `✅ ADO uploaded | ${adoFileInput.files[0].name}`;
+        adoUploadConfirmText.textContent = `ADO uploaded  ✅  ${adoFileInput.files[0].name}`;
         if (statusMessage) statusMessage.textContent = "";
 
         const formData = new FormData();
@@ -211,7 +211,7 @@ function updateSelectedExcelFile() {
 
     if (excelFileInput.files && excelFileInput.files.length > 0) {
         excelUploadConfirm.classList.remove("hidden");
-        excelUploadConfirmText.textContent = `✅ PCR Numbers Uploaded | ${excelFileInput.files[0].name}`;
+        excelUploadConfirmText.textContent = `PCR Numbers Uploaded  ✅  ${excelFileInput.files[0].name}`;
         if (statusMessage) statusMessage.textContent = "";
     } else {
         excelUploadConfirm.classList.add("hidden");
@@ -223,7 +223,7 @@ function updateSelectedImageFiles() {
 
     if (imageFilesInput.files && imageFilesInput.files.length > 0) {
         imageUploadConfirm.classList.remove("hidden");
-        imageUploadConfirmText.textContent = `✅ PoP's Uploaded | ${imageFilesInput.files.length} image file(s) ready`;
+        imageUploadConfirmText.textContent = `PoP's Uploaded  ✅  ${imageFilesInput.files.length} image file(s) ready`;
         if (statusMessage) statusMessage.textContent = "";
     } else {
         imageUploadConfirm.classList.add("hidden");
