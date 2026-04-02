@@ -33,134 +33,89 @@ const buildBtn = document.getElementById("buildBtn");
 const resetBtn = document.getElementById("resetBtn");
 const statusMessage = document.getElementById("statusMessage");
 
-console.log("PCR app loaded", {
-    form,
-    manualSection,
-    manualToggleBtn,
-    adoFileInput,
-    adoBrowseBtn,
-    adoDropArea,
-    excelFileInput,
-    excelBrowseBtn,
-    excelDropArea,
-    imageFilesInput,
-    imageBrowseBtn,
-    imageDropArea,
-    buildBtn,
-    resetBtn
+manualToggleBtn.addEventListener("click", () => {
+    manualSection.classList.toggle("visible");
 });
 
-if (manualToggleBtn && manualSection) {
-    manualToggleBtn.addEventListener("click", () => {
-        manualSection.classList.toggle("visible");
-    });
-}
+adoBrowseBtn.addEventListener("click", () => adoFileInput.click());
+excelBrowseBtn.addEventListener("click", () => excelFileInput.click());
+imageBrowseBtn.addEventListener("click", () => imageFilesInput.click());
 
-if (adoBrowseBtn && adoFileInput) {
-    adoBrowseBtn.addEventListener("click", () => adoFileInput.click());
-}
+adoFileInput.addEventListener("change", () => {
+    updateSelectedAdoFile();
+});
 
-if (excelBrowseBtn && excelFileInput) {
-    excelBrowseBtn.addEventListener("click", () => excelFileInput.click());
-}
+excelFileInput.addEventListener("change", () => {
+    updateSelectedExcelFile();
+});
 
-if (imageBrowseBtn && imageFilesInput) {
-    imageBrowseBtn.addEventListener("click", () => imageFilesInput.click());
-}
+imageFilesInput.addEventListener("change", () => {
+    updateSelectedImageFiles();
+});
 
-if (adoFileInput) {
-    adoFileInput.addEventListener("change", () => {
-        updateSelectedAdoFile();
-    });
-}
-
-if (excelFileInput) {
-    excelFileInput.addEventListener("change", () => {
-        updateSelectedExcelFile();
-    });
-}
-
-if (imageFilesInput) {
-    imageFilesInput.addEventListener("change", () => {
-        updateSelectedImageFiles();
-    });
-}
-
-function wireDragEvents(area) {
-    if (!area) return;
-
-    ["dragenter", "dragover"].forEach((eventName) => {
+["dragenter", "dragover"].forEach((eventName) => {
+    [adoDropArea, excelDropArea, imageDropArea].forEach((area) => {
         area.addEventListener(eventName, (e) => {
             e.preventDefault();
             e.stopPropagation();
             area.classList.add("drag-over");
         });
     });
+});
 
-    ["dragleave", "drop"].forEach((eventName) => {
+["dragleave", "drop"].forEach((eventName) => {
+    [adoDropArea, excelDropArea, imageDropArea].forEach((area) => {
         area.addEventListener(eventName, (e) => {
             e.preventDefault();
             e.stopPropagation();
             area.classList.remove("drag-over");
         });
     });
-}
+});
 
-wireDragEvents(adoDropArea);
-wireDragEvents(excelDropArea);
-wireDragEvents(imageDropArea);
+adoDropArea.addEventListener("drop", (e) => {
+    const files = e.dataTransfer.files;
+    if (!files || !files.length) return;
 
-if (adoDropArea && adoFileInput) {
-    adoDropArea.addEventListener("drop", (e) => {
-        const files = e.dataTransfer.files;
-        if (!files || !files.length) return;
+    const dt = new DataTransfer();
+    dt.items.add(files[0]);
+    adoFileInput.files = dt.files;
+    updateSelectedAdoFile();
+});
 
-        const dt = new DataTransfer();
-        dt.items.add(files[0]);
-        adoFileInput.files = dt.files;
-        updateSelectedAdoFile();
-    });
-}
+excelDropArea.addEventListener("drop", (e) => {
+    const files = e.dataTransfer.files;
+    if (!files || !files.length) return;
 
-if (excelDropArea && excelFileInput) {
-    excelDropArea.addEventListener("drop", (e) => {
-        const files = e.dataTransfer.files;
-        if (!files || !files.length) return;
+    const dt = new DataTransfer();
+    dt.items.add(files[0]);
+    excelFileInput.files = dt.files;
+    updateSelectedExcelFile();
+});
 
-        const dt = new DataTransfer();
-        dt.items.add(files[0]);
-        excelFileInput.files = dt.files;
-        updateSelectedExcelFile();
-    });
-}
+imageDropArea.addEventListener("drop", (e) => {
+    const files = e.dataTransfer.files;
+    if (!files || !files.length) return;
 
-if (imageDropArea && imageFilesInput) {
-    imageDropArea.addEventListener("drop", (e) => {
-        const files = e.dataTransfer.files;
-        if (!files || !files.length) return;
-
-        const dt = new DataTransfer();
-        for (let i = 0; i < files.length; i++) {
-            dt.items.add(files[i]);
-        }
-        imageFilesInput.files = dt.files;
-        updateSelectedImageFiles();
-    });
-}
+    const dt = new DataTransfer();
+    for (let i = 0; i < files.length; i++) {
+        dt.items.add(files[i]);
+    }
+    imageFilesInput.files = dt.files;
+    updateSelectedImageFiles();
+});
 
 async function updateSelectedAdoFile() {
-    if (!adoFileInput || !adoUploadConfirm || !adoUploadConfirmText) return;
-
     if (adoFileInput.files && adoFileInput.files.length > 0) {
         adoUploadConfirm.classList.remove("hidden");
-        adoUploadConfirmText.textContent = `ADO Uploaded  ✅  ${adoFileInput.files[0].name}`;
-        if (statusMessage) statusMessage.textContent = "";
+        adoUploadConfirmText.textContent = `ADO uploaded ✅ ${adoFileInput.files[0].name}`;
+        statusMessage.textContent = "";
 
         const formData = new FormData();
         formData.append("ado_file", adoFileInput.files[0]);
 
         try {
-            const response = await fetch("/extract-ado", {
+            const response = await fetch(`${window.location.origin}/extract-ado`, {
                 method: "POST",
                 body: formData
             });
@@ -170,89 +125,157 @@ async function updateSelectedAdoFile() {
                 try {
                     const errorJson = await response.json();
                     errorText = errorJson.detail || errorText;
-                } catch (_) {}
+                } catch {
+                    errorText = "Couldn't extract fields from the ADO.";
+                }
                 throw new Error(errorText);
             }
 
             const data = await response.json();
 
-            if (adoPreviewClientName) adoPreviewClientName.textContent = data.client_name || "—";
-            if (adoPreviewSalesRep) adoPreviewSalesRep.textContent = data.sales_rep || "—";
-            if (adoPreviewContractNumber) adoPreviewContractNumber.textContent = data.contract_number || "—";
-            if (adoPreview) adoPreview.classList.add("visible");
+            adoPreviewClientName.textContent = data.client_name || "—";
+            adoPreviewSalesRep.textContent = data.sales_rep || "—";
+            adoPreviewContractNumber.textContent = data.contract_number || "—";
+            adoPreview.classList.add("visible");
 
-            if (data.client_name && clientNameInput && !clientNameInput.value.trim()) {
+            if (data.client_name && !clientNameInput.value.trim()) {
                 clientNameInput.value = data.client_name;
             }
-            if (data.sales_rep && salesRepSelect && !salesRepSelect.value.trim()) {
+            if (data.sales_rep && !salesRepSelect.value.trim()) {
                 salesRepSelect.value = data.sales_rep;
             }
-            if (data.contract_number && contractNumberInput && !contractNumberInput.value.trim()) {
+            if (data.contract_number && !contractNumberInput.value.trim()) {
                 contractNumberInput.value = data.contract_number;
             }
         } catch (error) {
-            if (adoPreview) adoPreview.classList.remove("visible");
-            if (adoPreviewClientName) adoPreviewClientName.textContent = "—";
-            if (adoPreviewSalesRep) adoPreviewSalesRep.textContent = "—";
-            if (adoPreviewContractNumber) adoPreviewContractNumber.textContent = "—";
-            if (statusMessage) statusMessage.textContent = error.message || "Failed to read ADO.";
+            adoPreview.classList.remove("visible");
+            adoPreviewClientName.textContent = "—";
+            adoPreviewSalesRep.textContent = "—";
+            adoPreviewContractNumber.textContent = "—";
+            statusMessage.textContent = error.message || "Failed to read ADO.";
         }
     } else {
         adoUploadConfirm.classList.add("hidden");
-        if (adoPreview) adoPreview.classList.remove("visible");
-        if (adoPreviewClientName) adoPreviewClientName.textContent = "—";
-        if (adoPreviewSalesRep) adoPreviewSalesRep.textContent = "—";
-        if (adoPreviewContractNumber) adoPreviewContractNumber.textContent = "—";
+        adoPreview.classList.remove("visible");
+        adoPreviewClientName.textContent = "—";
+        adoPreviewSalesRep.textContent = "—";
+        adoPreviewContractNumber.textContent = "—";
     }
 }
 
 function updateSelectedExcelFile() {
-    if (!excelFileInput || !excelUploadConfirm || !excelUploadConfirmText) return;
-
     if (excelFileInput.files && excelFileInput.files.length > 0) {
         excelUploadConfirm.classList.remove("hidden");
-        excelUploadConfirmText.textContent = `PCR Numbers Uploaded  ✅  ${excelFileInput.files[0].name}`;
-        if (statusMessage) statusMessage.textContent = "";
+        excelUploadConfirmText.textContent = `PCR Numbers uploaded ✅ ${excelFileInput.files[0].name}`;
+        statusMessage.textContent = "";
     } else {
         excelUploadConfirm.classList.add("hidden");
     }
 }
 
 function updateSelectedImageFiles() {
-    if (!imageFilesInput || !imageUploadConfirm || !imageUploadConfirmText) return;
-
     if (imageFilesInput.files && imageFilesInput.files.length > 0) {
         imageUploadConfirm.classList.remove("hidden");
-        imageUploadConfirmText.textContent = `PoP's Uploaded  ✅  ${imageFilesInput.files.length} image file(s) ready`;
-        if (statusMessage) statusMessage.textContent = "";
+        imageUploadConfirmText.textContent = `${imageFilesInput.files.length} PoP image(s) uploaded ✅`;
+        statusMessage.textContent = "";
     } else {
         imageUploadConfirm.classList.add("hidden");
     }
 }
 
-if (buildBtn) {
-    buildBtn.addEventListener("click", async () => {
-        const clientName = clientNameInput ? clientNameInput.value.trim() : "";
-        const salesRep = salesRepSelect ? salesRepSelect.value.trim() : "";
-        const contractNumber = contractNumberInput ? contractNumberInput.value.trim() : "";
-        const excelFile = excelFileInput ? excelFileInput.files[0] : null;
-        const adoFile = adoFileInput ? adoFileInput.files[0] : null;
-
-        if (!excelFile) {
-            if (statusMessage) statusMessage.textContent = "Please upload a PCR Numbers Excel file.";
+function resizeImageFile(file, maxDimension = 2200, quality = 0.82) {
+    return new Promise((resolve, reject) => {
+        if (!file.type.startsWith("image/")) {
+            resolve(file);
             return;
         }
 
-        if (!adoFile && !clientName && !salesRep && !contractNumber) {
-            if (statusMessage) {
-                statusMessage.textContent = "Upload an ADO PDF or use manual contract information entry.";
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+
+        img.onload = () => {
+            const width = img.width;
+            const height = img.height;
+
+            let targetWidth = width;
+            let targetHeight = height;
+
+            if (width > height && width > maxDimension) {
+                targetWidth = maxDimension;
+                targetHeight = Math.round((height * maxDimension) / width);
+            } else if (height >= width && height > maxDimension) {
+                targetHeight = maxDimension;
+                targetWidth = Math.round((width * maxDimension) / height);
             }
-            return;
-        }
 
-        if (statusMessage) statusMessage.textContent = "Building PCR...";
-        buildBtn.disabled = true;
+            const canvas = document.createElement("canvas");
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
 
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+            canvas.toBlob(
+                (blob) => {
+                    URL.revokeObjectURL(objectUrl);
+
+                    if (!blob) {
+                        reject(new Error(`Couldn't process image: ${file.name}`));
+                        return;
+                    }
+
+                    const newName = file.name.replace(/\.(png|jpg|jpeg)$/i, ".jpg");
+                    const resizedFile = new File([blob], newName, {
+                        type: "image/jpeg",
+                        lastModified: Date.now()
+                    });
+
+                    resolve(resizedFile);
+                },
+                "image/jpeg",
+                quality
+            );
+        };
+
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error(`Couldn't read image: ${file.name}`));
+        };
+
+        img.src = objectUrl;
+    });
+}
+
+async function prepareBoardImages(files) {
+    const prepared = [];
+    for (const file of files) {
+        const resized = await resizeImageFile(file, 2200, 0.82);
+        prepared.push(resized);
+    }
+    return prepared;
+}
+
+buildBtn.addEventListener("click", async () => {
+    const clientName = clientNameInput ? clientNameInput.value.trim() : "";
+    const salesRep = salesRepSelect ? salesRepSelect.value.trim() : "";
+    const contractNumber = contractNumberInput ? contractNumberInput.value.trim() : "";
+    const excelFile = excelFileInput.files[0];
+    const adoFile = adoFileInput.files[0];
+
+    if (!excelFile) {
+        statusMessage.textContent = "Please upload a PCR Numbers Excel file.";
+        return;
+    }
+
+    if (!adoFile && !clientName && !salesRep && !contractNumber) {
+        statusMessage.textContent = "Upload an ADO PDF or use manual contract information entry.";
+        return;
+    }
+
+    statusMessage.textContent = "Building PCR...";
+    buildBtn.disabled = true;
+
+    try {
         const formData = new FormData();
         formData.append("client_name", clientName);
         formData.append("sales_rep", salesRep);
@@ -263,71 +286,64 @@ if (buildBtn) {
             formData.append("ado_file", adoFile);
         }
 
-        if (imageFilesInput && imageFilesInput.files) {
-            for (let i = 0; i < imageFilesInput.files.length; i++) {
-                formData.append("board_images", imageFilesInput.files[i]);
-            }
+        const preparedImages = await prepareBoardImages(Array.from(imageFilesInput.files));
+
+        for (const imageFile of preparedImages) {
+            formData.append("board_images", imageFile);
         }
 
-        try {
-            const response = await fetch("/build", {
-                method: "POST",
-                body: formData
-            });
+        const response = await fetch(`${window.location.origin}/build`, {
+            method: "POST",
+            body: formData
+        });
 
-            if (!response.ok) {
-                let errorText = "Something went wrong building the PCR.";
-                try {
-                    const errorJson = await response.json();
-                    errorText = errorJson.detail || errorText;
-                } catch (_) {}
-                throw new Error(errorText);
+        if (!response.ok) {
+            let errorText = "Something went wrong building the PCR.";
+            try {
+                const errorJson = await response.json();
+                errorText = errorJson.detail || errorText;
+            } catch {
+                errorText = "Something went wrong building the PCR.";
             }
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const anchor = document.createElement("a");
-            const disposition = response.headers.get("Content-Disposition") || "";
-            const match = disposition.match(/filename="([^"]+)"/);
-
-            anchor.href = url;
-            anchor.download = match ? match[1] : "PCR_Report.pptx";
-            document.body.appendChild(anchor);
-            anchor.click();
-            anchor.remove();
-            window.URL.revokeObjectURL(url);
-
-            if (statusMessage) {
-                statusMessage.textContent = "Done. Your PCR PPTX has been downloaded.";
-            }
-        } catch (error) {
-            console.error(error);
-            if (statusMessage) {
-                statusMessage.textContent = error.message || "Failed to build PCR.";
-            }
-        } finally {
-            buildBtn.disabled = false;
+            throw new Error(errorText);
         }
-    });
-}
 
-if (resetBtn) {
-    resetBtn.addEventListener("click", () => {
-        if (form) form.reset();
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="([^"]+)"/);
 
-        if (adoFileInput) adoFileInput.value = "";
-        if (excelFileInput) excelFileInput.value = "";
-        if (imageFilesInput) imageFilesInput.value = "";
+        anchor.href = url;
+        anchor.download = match ? match[1] : "PCR_Report.pptx";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.URL.revokeObjectURL(url);
 
-        if (adoUploadConfirm) adoUploadConfirm.classList.add("hidden");
-        if (excelUploadConfirm) excelUploadConfirm.classList.add("hidden");
-        if (imageUploadConfirm) imageUploadConfirm.classList.add("hidden");
+        statusMessage.textContent = "Done. Your PCR PPTX has been downloaded.";
+    } catch (error) {
+        statusMessage.textContent = error.message || "Failed to build PCR.";
+    } finally {
+        buildBtn.disabled = false;
+    }
+});
 
-        if (adoPreview) adoPreview.classList.remove("visible");
-        if (adoPreviewClientName) adoPreviewClientName.textContent = "—";
-        if (adoPreviewSalesRep) adoPreviewSalesRep.textContent = "—";
-        if (adoPreviewContractNumber) adoPreviewContractNumber.textContent = "—";
+resetBtn.addEventListener("click", () => {
+    form.reset();
 
-        if (statusMessage) statusMessage.textContent = "";
-    });
-}
+    adoFileInput.value = "";
+    excelFileInput.value = "";
+    imageFilesInput.value = "";
+
+    adoUploadConfirm.classList.add("hidden");
+    excelUploadConfirm.classList.add("hidden");
+    imageUploadConfirm.classList.add("hidden");
+
+    adoPreview.classList.remove("visible");
+    adoPreviewClientName.textContent = "—";
+    adoPreviewSalesRep.textContent = "—";
+    adoPreviewContractNumber.textContent = "—";
+
+    statusMessage.textContent = "";
+});
